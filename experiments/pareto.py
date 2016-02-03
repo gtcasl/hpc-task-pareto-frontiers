@@ -29,17 +29,17 @@ if __name__ == "__main__":
     import sys
     import csv
 
-    time = [] # third column
+    speedup = [] # third column
     power = [] # fourth column
     with open(sys.argv[1], "r") as csvfile:
         csvreader = csv.reader(csvfile)
         first_line = csvreader.next()
         pow_col = first_line.index("power")
-        time_col = first_line.index("time")
+        speedup_col = first_line.index("speedup")
         for row in csvreader:
-            time.append(float(row[time_col]))
+            speedup.append(float(row[speedup_col]))
             power.append(float(row[pow_col]))
-    frontier = pareto_frontier(power, time, maxX=False, maxY=False)
-    print "power,time"
+    frontier = pareto_frontier(power, speedup, maxX=False, maxY=True)
+    print "power,speedup"
     for p,t in zip(frontier[0],frontier[1]):
         print "%s,%s" % (p,t)

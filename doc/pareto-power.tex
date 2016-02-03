@@ -8,14 +8,15 @@
 \begin{tikzpicture}
     \begin{axis}[
             xlabel={Power},
-            ylabel={Time},
+            ylabel={Speedup},
             clip mode=individual,
             line width=1pt,
-            title={Power--Time Trade-offs For SPMV Parallelization States},
-            legend entries={Possible States,Pareto-Optimal States},
+            title={Power--Performance Trade-offs For SPMV Parallelization States},
+            legend entries={Possible States,Pareto Frontier},
+            legend pos=north west,
         ]
-        \addplot+ table [only marks,col sep=comma,x=power,y=time]{spmv.csv};
-        \addplot+ table [mark=none,col sep=comma,x=power,y=time]{pareto.csv};
+        \addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.all.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/pareto.all.csv};
     \end{axis}
 \end{tikzpicture}
 \end{document}
