@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 '''
 Method to take two equally-sized lists and return just the elements which lie 
 on the Pareto frontier, sorted into order.
@@ -32,9 +33,12 @@ if __name__ == "__main__":
     power = [] # fourth column
     with open(sys.argv[1], "r") as csvfile:
         csvreader = csv.reader(csvfile)
+        first_line = csvreader.next()
+        pow_col = first_line.index("power")
+        time_col = first_line.index("time")
         for row in csvreader:
-            time.append(float(row[2]))
-            power.append(float(row[1]))
+            time.append(float(row[time_col]))
+            power.append(float(row[pow_col]))
     frontier = pareto_frontier(power, time, maxX=False, maxY=False)
     print "power,time"
     for p,t in zip(frontier[0],frontier[1]):

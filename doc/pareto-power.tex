@@ -14,8 +14,8 @@
             title={Power--Time Trade-offs For SPMV Parallelization States},
             legend entries={Possible States,Pareto-Optimal States},
         ]
-        \addplot+ table [only marks,col sep=comma,x=power,y=time]{spmv.total.labeled.csv};
-        \addplot+ table [mark=none,col sep=comma,x=power,y=time]{pareto.power.csv};
+        \addplot+ table [only marks,col sep=comma,x=power,y=time]{spmv.csv};
+        \addplot+ table [mark=none,col sep=comma,x=power,y=time]{pareto.csv};
     \end{axis}
 \end{tikzpicture}
 \end{document}
