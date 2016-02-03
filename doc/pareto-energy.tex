@@ -1,0 +1,21 @@
+\documentclass{standalone}
+\usepackage{pgfplots}
+\usepackage{tikz}
+\pgfplotsset{compat=1.12}
+\usetikzlibrary{pgfplots.groupplots,positioning,graphs,matrix,fit,pgfplots.statistics}
+
+\begin{document}
+\begin{tikzpicture}
+    \begin{axis}[
+            xlabel={Energy},
+            ylabel={Time},
+            clip mode=individual,
+            line width=1pt,
+            title={Energy--Time Trade-offs For SPMV Parallelization States},
+            legend entries={Possible States,Pareto-Optimal States},
+        ]
+        \addplot+ table [only marks,col sep=comma,x=energy,y=time]{spmv.total.labeled.csv};
+        \addplot+ table [mark=none,col sep=comma,x=energy,y=time]{pareto.energy.csv};
+    \end{axis}
+\end{tikzpicture}
+\end{document}
