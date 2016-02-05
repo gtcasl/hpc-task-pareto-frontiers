@@ -1,0 +1,36 @@
+\documentclass{standalone}
+\usepackage{pgfplots}
+\usepackage{tikz}
+\pgfplotsset{compat=1.12}
+\usetikzlibrary{pgfplots.groupplots,positioning,graphs,matrix,fit,pgfplots.statistics}
+
+\begin{document}
+\begin{tikzpicture}
+    \begin{groupplot}[
+            group style={
+                group size=1 by 2,
+                xlabels at=edge bottom,
+                xticklabels at=edge bottom,
+                vertical sep=2pt,
+            },
+            xlabel={Number of Threads},
+            grid=major,
+            xmin=1,
+            xmax=228,
+        ]
+        \nextgroupplot[
+            ylabel={Speedup},
+            title={SPMV},
+            legend entries={Possible States,Pareto Frontier},
+            legend pos=south east,
+        ]
+        \addplot+[mark=*,mark size=0.7,only marks] table [col sep=comma,x=nthreads,y=speedup]{../experiments/problemsize/spmv.100.csv};
+        \addplot+[mark=*,mark size=0.7,only marks] table [col sep=comma,x=nthreads,y=speedup]{../experiments/problemsize/pareto.100.csv};
+        \nextgroupplot[
+            ylabel={Power},
+        ]
+        \addplot+[mark=*,mark size=0.7,only marks] table [col sep=comma,x=nthreads,y=power]{../experiments/problemsize/spmv.100.csv};
+        \addplot+[mark=*,mark size=0.7,only marks] table [col sep=comma,x=nthreads,y=power]{../experiments/problemsize/pareto.100.csv};
+    \end{groupplot}
+\end{tikzpicture}
+\end{document}
