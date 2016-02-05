@@ -1,0 +1,34 @@
+\documentclass{standalone}
+\usepackage{pgfplots}
+\usepackage{tikz}
+\pgfplotsset{compat=1.12}
+\usetikzlibrary{pgfplots.groupplots,positioning,graphs,matrix,fit,pgfplots.statistics}
+
+\begin{document}
+\begin{tikzpicture}
+    \begin{axis}[
+            xlabel={Power},
+            ylabel={Speedup},
+            line width=1pt,
+            title={SPMV Pareto Frontiers Across Frequency States},
+            legend entries={0.6GHz,0.65GHz,0.7GHz,0.8GHz,0.9GHz,1.0GHz,1.1GHz},
+            legend pos=north west,
+            cycle list name=color list,
+        ]
+        %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.100.csv};
+        %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.120.csv};
+        %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.140.csv};
+        %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.160.csv};
+        %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.180.csv};
+        %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.200.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.600000.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.650000.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.700000.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.800000.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.900000.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.1000000.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.1100000.csv};
+        %\addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/frequency/pareto.all.csv};
+    \end{axis}
+\end{tikzpicture}
+\end{document}
