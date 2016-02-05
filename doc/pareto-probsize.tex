@@ -9,11 +9,11 @@
     \begin{axis}[
             xlabel={Power},
             ylabel={Speedup},
-            clip mode=individual,
             line width=1pt,
             title={SPMV Pareto Frontiers for Different Problem Sizes},
             legend entries={$1.0^6$,$1.2^6$,$1.4^6$,$1.6^6$,$1.8^6$,$2.0^6$},
             legend pos=north west,
+            cycle list name=color list,
         ]
         %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.100.csv};
         %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.120.csv};

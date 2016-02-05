@@ -9,14 +9,13 @@
     \begin{axis}[
             xlabel={Power},
             ylabel={Speedup},
-            clip mode=individual,
             line width=1pt,
-            title={Power--Performance Trade-offs For SPMV Parallelization States},
+            title={SPMV Pareto Frontier},
             legend entries={Possible States,Pareto Frontier},
             legend pos=north west,
         ]
-        \addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.all.csv};
-        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/pareto.all.csv};
+        \addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/spmv.100.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/pareto.100.csv};
     \end{axis}
 \end{tikzpicture}
 \end{document}
