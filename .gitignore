@@ -2,3 +2,4 @@ tags
 doc/out
 spmv
 *.o
+blas
