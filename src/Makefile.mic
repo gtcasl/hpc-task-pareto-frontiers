@@ -1,11 +1,13 @@
 TARGET := spmv
 SRC := main.cc setup.cc mult.cc
 
+BLAS := blas
+
 # the sstmacro-config script must be found in PATH
 CXX :=   icpc
 CC :=    icc
 CXXFLAGS := -O3 -fopenmp -mmic
-CPPFLAGS := -I. -I/home/eric/.local/stow/lwperf-mic/include -DLWPERF_USE_CSV
+CPPFLAGS := -I. -I/home/eric/.local/stow/lwperf-mic/include -DLWPERF_USE_CSV -mkl -Wall -Wextra
 LIBDIR :=   
 PREFIX :=   
 LDFLAGS := -L/home/eric/.local/stow/lwperf-mic/lib
@@ -15,7 +17,10 @@ OBJ := $(SRC:.cc=.o)
 
 .PHONY: clean install 
 
-all: $(TARGET)
+all: $(TARGET) $(BLAS)
+
+$(BLAS): blas.cc
+	$(CXX) -o $@ $+ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(LIBS)
 
 $(TARGET): $(OBJ) 
 	$(CXX) -o $@ $+ $(LDFLAGS) $(CXXFLAGS) $(LIBS) 

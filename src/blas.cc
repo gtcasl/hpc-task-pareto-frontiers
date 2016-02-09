@@ -13,7 +13,7 @@
 // compile with -mkl
 // link with -lmkl_rt
 
-#define NUM_ITERS 50
+#define NUM_ITERS 1000
 
 using namespace std;
 
