@@ -31,7 +31,8 @@ double gen_rand(){
 // DPOTRF DTRSM DSYRK DGEMM
 struct dpotrf_t{
   vector<double> a;
-  dpotrf_t(int N) : a(N * N){
+  int n;
+  dpotrf_t(int N) : a(N * N), n(N){
     generate(a.begin(), a.end(), gen_rand);
     vector<double> a_copy = a;
     vector<double> sym_mat(N * N);
@@ -48,8 +49,7 @@ struct dpotrf_t{
 };
 
 void run_dpotrf(dpotrf_t d){
-  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.a.size(), &d.a.front(),
-                            d.a.size());
+  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.n, &d.a.front(), d.n);
   if(info != 0){
     cerr << "Error running dpotrf" << endl;
     exit(-1);
@@ -58,7 +58,8 @@ void run_dpotrf(dpotrf_t d){
 
 struct dtrsm_t{
   vector<double> a,b;
-  dtrsm_t(int N) : a(N*N), b(N*N){
+  int n;
+  dtrsm_t(int N) : a(N*N), b(N*N), n(N){
     generate(a.begin(), a.end(), gen_rand);
     generate(b.begin(), b.end(), gen_rand);
   }
@@ -66,8 +67,7 @@ struct dtrsm_t{
 
 void run_dtrsm(dtrsm_t d){
   cblas_dtrsm(CblasRowMajor, CblasRight, CblasUpper, CblasNoTrans, CblasUnit,
-              d.a.size(), d.a.size(), 1.0, &d.a.front(), d.a.size(),
-              &d.b.front(), d.a.size());
+              d.n, d.n, 1.0, &d.a.front(), d.n, &d.b.front(), d.n);
 }
 
 struct dsyrk_t{
