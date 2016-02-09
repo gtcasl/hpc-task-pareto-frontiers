@@ -101,26 +101,18 @@ void run_dgemm(dgemm_t d){
 // CG
 // DGEMV DAXPY DDOT
 struct dgemv_t{
-  double* x;
-  double* a;
-  double* y;
+  vector<double> x,a,y;
   int n;
+  dgemv_t(int N) : x(N), a(N*N), y(N), n(N){
+    // initialize data with garbage or whatever
+    generate(x.begin(), x.end(), gen_rand);
+    generate(a.begin(), a.end(), gen_rand);
+  }
 };
 
-dgemv_t prep_dgemv(int N){
-  dgemv_t d;
-  d.n = N;
-  d.x = new double[d.n];
-  d.a = new double[d.n*d.n];
-  d.y = new double[d.n];
-  // initialize data with garbage or whatever
-  rand_fill(d.x,d.n);
-  rand_fill(d.a,d.n*d.n);
-  return d;
-}
 void run_dgemv(dgemv_t d){
-  //cblas_dgemv(Layout, trans, m, n, alpha, a, lda, x, incx, beta, y, incy);
-  cblas_dgemv(CblasRowMajor, CblasNoTrans, d.n, d.n, 1, d.a, d.n, d.x, 1, 0, d.y, 1);
+  cblas_dgemv(CblasRowMajor, CblasNoTrans, d.n, d.n, 1, &d.a.front(), d.n,
+              &d.x.front(), 1, 0, &d.y.front(), 1);
 }
 
 struct daxpy_t{
