@@ -130,22 +130,16 @@ void run_daxpy(daxpy_t d){
 }
 
 struct ddot_t{
-  double *x;
-  double *y;
+  vector<double> x,y;
   int n;
+  ddot_t(int N) : x(N*N), y(N*N), n(N){
+    generate(x.begin(), x.end(), gen_rand);
+    generate(y.begin(), y.end(), gen_rand);
+  }
 };
 
-ddot_t prep_ddot(int N){
-  ddot_t d;
-  d.n = N * N;
-  d.x = new double[d.n];
-  d.y = new double[d.n];
-  rand_fill(d.x,d.n);
-  rand_fill(d.y,d.n);
-  return d;
-}
 void run_ddot(ddot_t d){
-  cblas_ddot(d.n, d.x, 1, d.y, 1);
+  cblas_ddot(d.n, &d.x.front(), 1, &d.y.front(), 1);
 }
 
 template<typename T>
