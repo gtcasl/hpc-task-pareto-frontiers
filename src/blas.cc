@@ -116,25 +116,17 @@ void run_dgemv(dgemv_t d){
 }
 
 struct daxpy_t{
-  double *x;
-  double *y;
+  vector<double> x,y;
   double a;
   int n;
+  daxpy_t(int N) : x(N*N), y(N*N), a(43.59), n(N){
+    generate(x.begin(), x.end(), gen_rand);
+    generate(y.begin(), y.end(), gen_rand);
+  }
 };
 
-daxpy_t prep_daxpy(int N){
-  daxpy_t d;
-  d.n = N * N;
-  d.x = new double[d.n];
-  d.y = new double[d.n];
-  d.a = 43.59;
-  // initialize arrays/pick a
-  rand_fill(d.x,d.n);
-  rand_fill(d.y,d.n);
-  return d;
-}
 void run_daxpy(daxpy_t d){
-  cblas_daxpy(d.n, d.a, d.x, 1, d.y, 1);
+  cblas_daxpy(d.n, d.a, &d.x.front(), 1, &d.y.front(), 1);
 }
 
 struct ddot_t{
