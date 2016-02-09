@@ -71,23 +71,17 @@ void run_dtrsm(dtrsm_t d){
 }
 
 struct dsyrk_t{
+  vector<double> a,c;
   int n;
-  int k;
-  double* a;
-  double* c;
+  dsyrk_t(int N) : a(N*N), c(N*N), n(N){
+    generate(a.begin(), a.end(), gen_rand);
+    generate(c.begin(), c.end(), gen_rand);
+  }
 };
 
-dsyrk_t prep_dsyrk(int N){
-  dsyrk_t d;
-  d.n = N;
-  d.a = new double[d.n * d.n];
-  d.c = new double[d.n * d.n];
-  rand_fill(d.a, d.n * d.n);
-  rand_fill(d.c, d.n * d.n);
-  return d;
-}
 void run_dsyrk(dsyrk_t d){
-  cblas_dsyrk(CblasRowMajor, CblasUpper, CblasNoTrans, d.n, d.n, 1.0, d.a, d.n, 1.0, d.c, d.n);
+  cblas_dsyrk(CblasRowMajor, CblasUpper, CblasNoTrans, d.n, d.n, 1.0,
+              &d.a.front(), d.n, 1.0, &d.c.front(), d.n);
 }
 
 struct dgemm_t{
