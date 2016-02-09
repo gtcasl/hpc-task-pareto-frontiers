@@ -2,12 +2,17 @@
 #include <ctime>
 #include <iostream>
 #include <unistd.h>
+#include <vector>
+
 #include "mkl.h"
-#include <lwperf/lwperf.h>
 #include <omp.h>
+
+#include <lwperf/lwperf.h>
 
 // compile with -mkl
 // link with -lmkl_rt
+
+#define NUM_ITERS 50
 
 using namespace std;
 
@@ -182,6 +187,23 @@ void run_ddot(ddot_t d){
   cblas_ddot(d.n, d.x, 1, d.y, 1);
 }
 
+template<typename T>
+void experiment(lwperf_t perf, const char* name, T (*prep_fn)(int), void(*run_fn)(T), int N){
+  cout << "Running experiment for " << name << endl;
+  vector<T> prepped(NUM_ITERS + 1);
+  for(int i = 0; i < NUM_ITERS + 1; i++){
+    prepped[i] = prep_fn(N);
+  }
+
+  // warm up
+  run_fn(prepped[NUM_ITERS]);
+  lwperf_log(perf, name);
+  for(int i = 0; i < NUM_ITERS; i++){
+    run_fn(prepped[i]);
+  }
+  lwperf_stop(perf, name);
+}
+
 int main(int argc, char* argv[]){
   srand((unsigned)time(NULL));
 
@@ -197,60 +219,18 @@ int main(int argc, char* argv[]){
   std::cout << "nthreads: " << nthreads << std::endl;
   lwperf_add_invariant(perf, "nthreads", nthreads);
 
-  // Prep Cholesky
-  cout << "Prepping dpotrf" << endl;
-  dpotrf_t potrft = prep_dpotrf(N);
-  cout << "Prepping dtrsm" << endl;
-  dtrsm_t trsmt = prep_dtrsm(N);
-  cout << "Prepping dsyrk" << endl;
-  dsyrk_t syrkt = prep_dsyrk(N);
-  cout << "Prepping dgemm" << endl;
-  dgemm_t gemmt = prep_dgemm(N);
-
-  // Prep CG
-  cout << "Prepping dgemv" << endl;
-  dgemv_t gemvt = prep_dgemv(N);
-  cout << "Prepping daxpy" << endl;
-  daxpy_t axpyt = prep_daxpy(N);
-  cout << "Prepping ddot" << endl;
-  ddot_t dott = prep_ddot(N);
-
-  // Cholesky
-  cout << "Running dpotrf" << endl;
-  lwperf_log(perf, "dpotrf");
-  run_dpotrf(potrft);
-  lwperf_stop(perf, "dpotrf");
-
-  cout << "Running dtrsm" << endl;
-  lwperf_log(perf, "dtrsm");
-  run_dtrsm(trsmt);
-  lwperf_stop(perf, "dtrsm");
-
-  cout << "Running dsyrk" << endl;
-  lwperf_log(perf, "dsyrk");
-  run_dsyrk(syrkt);
-  lwperf_stop(perf, "dsyrk");
-
-  cout << "Running dgemm" << endl;
-  lwperf_log(perf, "dgemm");
-  run_dgemm(gemmt);
-  lwperf_stop(perf, "dgemm");
-
-  // CG
-  cout << "Running dgemv" << endl;
-  lwperf_log(perf, "dgemv");
-  run_dgemv(gemvt);
-  lwperf_stop(perf, "dgemv");
-
-  cout << "Running daxpy" << endl;
-  lwperf_log(perf, "daxpy");
-  run_daxpy(axpyt);
-  lwperf_stop(perf, "daxpy");
-
-  cout << "Running ddot" << endl;
-  lwperf_log(perf, "ddot");
-  run_ddot(dott);
-  lwperf_stop(perf, "ddot");
+  experiment(perf, "dpotrf", prep_dpotrf, run_dpotrf, N);
+// DPOTRF DTRSM DSYRK DGEMM
+// DGEMV DAXPY DDOT
+#define EXPERIMENT(name) experiment(perf, #name, prep_ ## name, run_ ## name, N)
+  EXPERIMENT(dpotrf);
+  EXPERIMENT(dtrsm);
+  EXPERIMENT(dsyrk);
+  EXPERIMENT(dgemm);
+  EXPERIMENT(dgemv);
+  EXPERIMENT(daxpy);
+  EXPERIMENT(ddot);
+#undef EXPERIMENT
 
   lwperf_finalize(perf);
   return 0;
