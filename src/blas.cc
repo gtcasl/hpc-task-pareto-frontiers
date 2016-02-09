@@ -119,7 +119,7 @@ struct daxpy_t{
   vector<double> x,y;
   double a;
   int n;
-  daxpy_t(int N) : x(N*N), y(N*N), a(43.59), n(N){
+  daxpy_t(int N) : x(N*N), y(N*N), a(43.59), n(N*N){
     generate(x.begin(), x.end(), gen_rand);
     generate(y.begin(), y.end(), gen_rand);
   }
@@ -132,7 +132,7 @@ void run_daxpy(daxpy_t d){
 struct ddot_t{
   vector<double> x,y;
   int n;
-  ddot_t(int N) : x(N*N), y(N*N), n(N){
+  ddot_t(int N) : x(N*N), y(N*N), n(N*N){
     generate(x.begin(), x.end(), gen_rand);
     generate(y.begin(), y.end(), gen_rand);
   }
