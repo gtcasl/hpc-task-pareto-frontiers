@@ -31,7 +31,7 @@ double gen_rand(){
 // DPOTRF DTRSM DSYRK DGEMM
 struct dpotrf_t{
   vector<double> a;
-  dpotrf_t(int N) : a(N){
+  dpotrf_t(int N) : a(N * N){
     generate(a.begin(), a.end(), gen_rand);
     vector<double> a_copy = a;
     vector<double> sym_mat(N * N);
@@ -57,22 +57,17 @@ void run_dpotrf(dpotrf_t d){
 }
 
 struct dtrsm_t{
-  int n;
-  double* a;
-  double* b;
+  vector<double> a,b;
+  dtrsm_t(int N) : a(N*N), b(N*N){
+    generate(a.begin(), a.end(), gen_rand);
+    generate(b.begin(), b.end(), gen_rand);
+  }
 };
 
-dtrsm_t prep_dtrsm(int N){
-  dtrsm_t d;
-  d.n = N;
-  d.a = new double[d.n * d.n];
-  d.b = new double[d.n * d.n];
-  rand_fill(d.a, d.n * d.n);
-  rand_fill(d.b, d.n * d.n);
-  return d;
-}
 void run_dtrsm(dtrsm_t d){
-  cblas_dtrsm(CblasRowMajor, CblasRight, CblasUpper, CblasNoTrans, CblasUnit, d.n, d.n, 1.0, d.a, d.n, d.b, d.n);
+  cblas_dtrsm(CblasRowMajor, CblasRight, CblasUpper, CblasNoTrans, CblasUnit,
+              d.a.size(), d.a.size(), 1.0, &d.a.front(), d.a.size(),
+              &d.b.front(), d.a.size());
 }
 
 struct dsyrk_t{
