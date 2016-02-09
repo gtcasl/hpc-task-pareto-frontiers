@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
@@ -22,39 +23,33 @@ void rand_fill(double* a,int n){
   }
 }
 
+double gen_rand(){
+  return ((double)rand()/(double)RAND_MAX);
+}
+
 // Cholesky
 // DPOTRF DTRSM DSYRK DGEMM
 struct dpotrf_t{
-  int n;
-  double* a;
+  vector<double> a;
+  dpotrf_t(int N) : a(N){
+    generate(a.begin(), a.end(), gen_rand);
+    vector<double> a_copy = a;
+    vector<double> sym_mat(N * N);
+    mkl_domatadd('r', 'n', 't', N, N, 1.0, &a.front(), N, 1.0,
+                 &a_copy.front(), N, &sym_mat.front(), N);
+
+    vector<double> ident(N*N, 0.0);
+    for(int i = 0; i < N; i++){
+      ident[i * N + i] = N;
+    }
+    mkl_domatadd('r', 'n', 'n', N, N, 1.0, &a_copy.front(), N, 1.0,
+                 &ident.front(), N, &a.front(), N);
+  }
 };
 
-dpotrf_t prep_dpotrf(int N){
-  dpotrf_t d;
-  d.n = N;
-  d.a = new double[d.n * d.n];
-  rand_fill(d.a, d.n * d.n);
-  double* a_copy = new double[d.n * d.n];
-  for(int i = 0; i < d.n * d.n; i++){
-    a_copy[i] = d.a[i];
-  }
-  double* sym_mat = new double[d.n * d.n];
-  mkl_domatadd('r', 'n', 't', d.n, d.n, 1.0, d.a, d.n, 1.0, a_copy, d.n, sym_mat, d.n);
-
-  double* ident = new double[d.n * d.n];
-  for(int i = 0; i < d.n * d.n; i++){
-    ident[i] = 0;
-  }
-  for(int i = 0; i < d.n; i++){
-    ident[i * d.n + i] = d.n;
-  }
-  mkl_domatadd('r', 'n', 'n', d.n, d.n, 1.0, a_copy, d.n, 1.0, ident, d.n, d.a, d.n);
-  delete[] a_copy;
-  delete[] ident;
-  return d;
-}
 void run_dpotrf(dpotrf_t d){
-  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.n, d.a, d.n);
+  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.a.size(), &d.a.front(),
+                            d.a.size());
   if(info != 0){
     cerr << "Error running dpotrf" << endl;
     exit(-1);
@@ -188,11 +183,11 @@ void run_ddot(ddot_t d){
 }
 
 template<typename T>
-void experiment(lwperf_t perf, const char* name, T (*prep_fn)(int), void(*run_fn)(T), int N){
+void experiment(lwperf_t perf, const char* name, void(*run_fn)(T), int N){
   cout << "Running experiment for " << name << endl;
-  vector<T> prepped(NUM_ITERS + 1);
+  vector<T> prepped;
   for(int i = 0; i < NUM_ITERS + 1; i++){
-    prepped[i] = prep_fn(N);
+    prepped.push_back(T(N));
   }
 
   // warm up
@@ -219,17 +214,10 @@ int main(int argc, char* argv[]){
   std::cout << "nthreads: " << nthreads << std::endl;
   lwperf_add_invariant(perf, "nthreads", nthreads);
 
-  experiment(perf, "dpotrf", prep_dpotrf, run_dpotrf, N);
 // DPOTRF DTRSM DSYRK DGEMM
 // DGEMV DAXPY DDOT
-#define EXPERIMENT(name) experiment(perf, #name, prep_ ## name, run_ ## name, N)
+#define EXPERIMENT(name) experiment(perf, #name, run_ ## name, N)
   EXPERIMENT(dpotrf);
-  EXPERIMENT(dtrsm);
-  EXPERIMENT(dsyrk);
-  EXPERIMENT(dgemm);
-  EXPERIMENT(dgemv);
-  EXPERIMENT(daxpy);
-  EXPERIMENT(ddot);
 #undef EXPERIMENT
 
   lwperf_finalize(perf);
