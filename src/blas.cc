@@ -85,24 +85,17 @@ void run_dsyrk(dsyrk_t d){
 }
 
 struct dgemm_t{
+  vector<double> a,b,c;
   int n;
-  double* a;
-  double* b;
-  double* c;
+  dgemm_t(int N) : a(N*N), b(N*N), c(N*N), n(N){
+    generate(a.begin(), a.end(), gen_rand);
+    generate(b.begin(), b.end(), gen_rand);
+  }
 };
 
-dgemm_t prep_dgemm(int N){
-  dgemm_t d;
-  d.n = N;
-  d.a = new double[d.n * d.n];
-  d.b = new double[d.n * d.n];
-  d.c = new double[d.n * d.n];
-  rand_fill(d.a, d.n * d.n);
-  rand_fill(d.b, d.n * d.n);
-  return d;
-}
 void run_dgemm(dgemm_t d){
-  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, d.n, d.n, d.n, 1.0, d.a, d.n, d.b, d.n, 0, d.c, d.n);
+  cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, d.n, d.n, d.n, 1.0,
+              &d.a.front(), d.n, &d.b.front(), d.n, 0, &d.c.front(), d.n);
 }
 
 // CG
