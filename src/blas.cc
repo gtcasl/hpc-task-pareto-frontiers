@@ -178,6 +178,12 @@ int main(int argc, char* argv[]){
 // DGEMV DAXPY DDOT
 #define EXPERIMENT(name) experiment(perf, #name, run_ ## name, N)
   EXPERIMENT(dpotrf);
+  EXPERIMENT(dtrsm);
+  EXPERIMENT(dsyrk);
+  EXPERIMENT(dgemm);
+  EXPERIMENT(dgemv);
+  EXPERIMENT(daxpy);
+  EXPERIMENT(ddot);
 #undef EXPERIMENT
 
   lwperf_finalize(perf);
