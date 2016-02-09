@@ -7,7 +7,7 @@ BLAS := blas
 CXX :=   icpc
 CC :=    icc
 CXXFLAGS := -O3 -fopenmp -mmic
-CPPFLAGS := -I. -I/home/eric/.local/stow/lwperf-mic/include -DLWPERF_USE_CSV -mkl -Wall -Wextra
+CPPFLAGS := -I. -I/home/eric/.local/stow/lwperf-mic/include -DLWPERF_USE_CSV -mkl -Wall -Wextra -std=c++11
 LIBDIR :=   
 PREFIX :=   
 LDFLAGS := -L/home/eric/.local/stow/lwperf-mic/lib
