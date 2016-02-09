@@ -163,16 +163,13 @@ template<typename T>
 void experiment(lwperf_t perf, const char* name, void(*run_fn)(T&), int N,
                 int num_iters){
   cout << "Running experiment for " << name << endl;
-  vector<T> prepped;
-  for(int i = 0; i < num_iters + 1; i++){
-    prepped.emplace_back(N);
-  }
+  T prepped(N);
 
   // warm up
-  run_fn(prepped[num_iters]);
+  run_fn(prepped);
   lwperf_log(perf, name);
   for(int i = 0; i < num_iters; i++){
-    run_fn(prepped[i]);
+    run_fn(prepped);
   }
   lwperf_stop(perf, name);
 }
@@ -195,13 +192,13 @@ int main(int argc, char* argv[]){
 // DPOTRF DTRSM DSYRK DGEMM
 // DGEMV DAXPY DDOT
 #define EXPERIMENT(name,iters) experiment(perf, #name, run_ ## name, N, iters)
-  EXPERIMENT(dpotrf,50);
-  EXPERIMENT(dtrsm,2000);
-  EXPERIMENT(dsyrk,400);
-  EXPERIMENT(dgemm,500);
-  EXPERIMENT(dgemv,4000);
-  EXPERIMENT(daxpy,10000);
-  EXPERIMENT(ddot,10000);
+  //EXPERIMENT(dpotrf,50);
+  EXPERIMENT(dtrsm,800);
+  EXPERIMENT(dsyrk,160);
+  EXPERIMENT(dgemm,400);
+  EXPERIMENT(dgemv,8000);
+  EXPERIMENT(daxpy,40000);
+  EXPERIMENT(ddot,40000);
 #undef EXPERIMENT
 
   lwperf_finalize(perf);
