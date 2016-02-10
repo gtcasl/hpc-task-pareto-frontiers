@@ -1,5 +1,5 @@
 tags
 doc/out
-spmv
+src/spmv
 *.o
 src/blas
