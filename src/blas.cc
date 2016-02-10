@@ -66,7 +66,9 @@ struct dpotrf_t{
 };
 
 void run_dpotrf(dpotrf_t& d){
-  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.n, d.a.data(), d.n);
+  mklvec a(d.n*d.n);
+  cblas_dcopy(d.n*d.n, d.a.data(), 1, a.data(), 1);
+  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.n, a.data(), d.n);
   if(info != 0){
     cerr << "Error running dpotrf" << endl;
     exit(-1);
@@ -192,7 +194,7 @@ int main(int argc, char* argv[]){
 // DPOTRF DTRSM DSYRK DGEMM
 // DGEMV DAXPY DDOT
 #define EXPERIMENT(name,iters) experiment(perf, #name, run_ ## name, N, iters)
-  //EXPERIMENT(dpotrf,50);
+  EXPERIMENT(dpotrf,40);
   EXPERIMENT(dtrsm,800);
   EXPERIMENT(dsyrk,160);
   EXPERIMENT(dgemm,400);
