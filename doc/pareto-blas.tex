@@ -1,0 +1,29 @@
+\documentclass{standalone}
+\usepackage{pgfplots}
+\usepackage{tikz}
+\pgfplotsset{compat=1.12}
+\usetikzlibrary{pgfplots.groupplots,positioning,graphs,matrix,fit,pgfplots.statistics}
+
+\begin{document}
+\begin{tikzpicture}
+    \begin{axis}[
+            xlabel={Power},
+            ylabel={Speedup},
+            line width=1pt,
+            title={Pareto Frontiers for Task Graph Kernels},
+            legend entries={daxpy, ddot, dgemm, dgemv, dpotrf, dsyrk, dtrsm, spmv},
+            legend pos=north west,
+            cycle list name=color list,
+        ]
+        %\addplot+[mark=*,mark size=0.3,only marks] table [col sep=comma,x=power,y=speedup]{../experiments/blas/dpotrf.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/blas/pareto.daxpy.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/blas/pareto.ddot.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/blas/pareto.dgemm.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/blas/pareto.dgemv.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/blas/pareto.dpotrf.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/blas/pareto.dsyrk.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/blas/pareto.dtrsm.csv};
+        \addplot+[mark=none] table [col sep=comma,x=power,y=speedup]{../experiments/problemsize/pareto.100.csv};
+    \end{axis}
+\end{tikzpicture}
+\end{document}
