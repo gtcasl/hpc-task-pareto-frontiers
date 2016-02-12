@@ -41,9 +41,9 @@ struct mklvec{
 // Cholesky
 // DPOTRF DTRSM DSYRK DGEMM
 struct dpotrf_t{
-  mklvec a;
+  mklvec a,a_scratch;
   int n;
-  dpotrf_t(int N) : a(N*N), n(N){
+  dpotrf_t(int N) : a(N*N), a_scratch(N*N), n(N){
     rand_fill(a.data(), N*N);
     mklvec a_copy(N*N);
     for(int i = 0; i < N*N; i++){
@@ -66,9 +66,8 @@ struct dpotrf_t{
 };
 
 void run_dpotrf(dpotrf_t& d){
-  mklvec a(d.n*d.n);
-  cblas_dcopy(d.n*d.n, d.a.data(), 1, a.data(), 1);
-  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.n, a.data(), d.n);
+  cblas_dcopy(d.n*d.n, d.a.data(), 1, d.a_scratch.data(), 1);
+  int info = LAPACKE_dpotrf(LAPACK_ROW_MAJOR, 'U', d.n, d.a_scratch.data(), d.n);
   if(info != 0){
     cerr << "Error running dpotrf" << endl;
     exit(-1);
