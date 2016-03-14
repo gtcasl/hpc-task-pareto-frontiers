@@ -7,6 +7,12 @@
 #include <set>
 #include <utility>
 
+#ifdef no_affinity
+struct cpu_set_t {};
+#define sched_setaffinity(...)
+#define CPU_ZERO(...)
+#endif
+
 class Task {
  public:
   void setCPUState(int s){

@@ -1,54 +1,19 @@
 #include "task.h"
+#include "scheduler.h"
 #include <cstdio>
 #include <cassert>
 #include <list>
+
+template <class T> std::map<int,T> impl::FunctionMap<T>::functions_;
 
 void test(int a, int b, int c)
 {
   printf("a=%d, b=%d, c=%d\n", a, b, c);
 }
 
-template <class T> std::map<int,T> impl::FunctionMap<T>::functions_;
-
 enum function_id {
   test_id,
 };
-
-char taskBuffer[1024];
-
-static const int terminate_tag = 42;
-
-void
-runLoop()
-{
-  int parent = 0;
-  MPI_Status stat;
-  while (1){
-    MPI_Recv(taskBuffer, sizeof(taskBuffer), MPI_BYTE, parent, 
-      MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
-
-    //int count; MPI_Get_count(&stat, MPI_BYTE, &count);
-    //printf("got count %d for tag %d\n", count, stat.MPI_TAG);
-
-    if (stat.MPI_TAG == terminate_tag){
-      return;
-    } else {
-      auto t = reinterpret_cast<Task*>(taskBuffer);
-      auto runner = TaskRunner::get(t->typeID());
-      runner->run(t);
-    }
-  }
-}
-
-void
-terminate()
-{
-  int nproc; MPI_Comm_size(MPI_COMM_WORLD, &nproc);
-  for (int dst=1; dst < nproc; ++dst){
-    int dummy = 42;
-    MPI_Send(&dummy, 1, MPI_INT, dst, terminate_tag, MPI_COMM_WORLD);
-  }
-}
 
 Task* 
 dummyTask(int a, int b, int c)
@@ -57,8 +22,8 @@ dummyTask(int a, int b, int c)
   return t;
 }
 
-void
-runMaster(int nworkers)
+Task*
+initDag()
 {
   //diamond dag
   Task* t1 = dummyTask(0,1,2); 
@@ -71,45 +36,7 @@ runMaster(int nworkers)
   t4->dependsOn(t3);
   t4->dependsOn(t2);
 
-  std::list<int> availableWorkers(nworkers);
-  for (int i=1; i < nworkers; ++i){ //leave off 0
-    availableWorkers.push_back(i);
-  }
-
-  std::list<Task*> runningTasks;
-  std::list<Task*> pendingTasks;
-
-  t1->run(0); //run the first task on worker 0
-  runningTasks.push_back(t1);
-  while (!runningTasks.empty()){
-    std::list<Task*>::iterator tmp,
-      it = runningTasks.begin(),
-      end = runningTasks.end();
-    while (it != end){
-      tmp = it++;
-      Task* t = *tmp;
-      if (t->checkDone()){
-        availableWorkers.push_front(t->worker());
-        runningTasks.erase(tmp);
-        t->clearListeners(pendingTasks);
-      }
-    }
-
-    while (!pendingTasks.empty()){
-      if (availableWorkers.empty()){
-        break;
-      }
-
-      int worker = availableWorkers.front(); 
-      availableWorkers.pop_front();
-
-      Task* t = pendingTasks.front();
-      pendingTasks.pop_front();
-
-      t->run(worker);
-      runningTasks.push_back(t);
-    }
-  }
+  return t1;
 }
 
 int main(int argc, char** argv)
@@ -117,18 +44,15 @@ int main(int argc, char** argv)
   RegisterTask(test,test_id,
     void, int, int, int);
 
-  MPI_Init(&argc, &argv);
-  int nproc, rank;
-  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-  MPI_Comm_size(MPI_COMM_WORLD, &nproc);
+  Scheduler* scheduler = new BasicScheduler;
+  
+  scheduler->init(argc,argv);
 
-  assert(nproc > 1);
-
-  if (rank == 0){
-    runMaster(nproc-1);
-    terminate();
+  if (scheduler->rank() == 0){
+    Task* root = initDag();
+    scheduler->runMaster(root);
   } else {
-    runLoop();
+    scheduler->runWorker();
   }
 
   return 0;
