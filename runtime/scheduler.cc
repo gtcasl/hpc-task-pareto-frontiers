@@ -1,9 +1,24 @@
 #include <task.h>
 #include <scheduler.h>
 #include <cassert>
+#include <stdio.h>
+#include <unistd.h>
+#include <errno.h>
+#include <mpi.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/stat.h> /* For mode constants */
+#include <fcntl.h> /* For O_* constants */
 
+#define __USE_GNU
+#include <sched.h>
+
+#define error(...) fprintf(stderr, __VA_ARGS__)
 
 char taskBuffer[1024];
+
+size_t Scheduler::mmap_size_ = 0;
+void*  Scheduler::mmap_buffer_ = 0;
 
 void 
 Scheduler::init(int argc, char** argv)
@@ -13,6 +28,54 @@ Scheduler::init(int argc, char** argv)
   MPI_Comm_size(MPI_COMM_WORLD, &nproc_);
   assert(nproc_ > 1);
   nworkers_ = nproc_ - 1;
+}
+
+static const char* mmap_fname = "mmap_heap";
+
+void
+Scheduler::allocateHeap(int ncopies)
+{
+  ncopies_ = ncopies;
+
+  int fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
+  if (fd < 0){ //oops, someone else already created it
+    fd = shm_open(mmap_fname, O_RDWR, S_IRWXU);
+  }
+  if (fd < 0){
+    error("invalid fd %d shm_open on %s: error=%d",
+      fd, mmap_fname, errno);
+  }
+
+  mmap_size_ = total_buffer_size_ * ncopies;
+
+  ftruncate(fd, mmap_size_);
+
+  mmap_buffer_ = mmap(NULL, mmap_size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+  if (mmap_buffer_ == ((void*)-1)){
+    error("bad mmap on shm_open %s:%d: error=%d",
+      mmap_fname, fd, errno);
+  }
+
+  //printf("allocated heap pointer %p of size %lu on rank %d\n", 
+  //  mmap_buffer_, mmap_size_, rank_);
+
+}
+
+void
+Scheduler::run(Task* root)
+{
+  if (rank_ == 0){
+    runMaster(root);
+  } else {
+    runWorker();
+  }
+}
+
+void
+Scheduler::deallocateHeap()
+{
+  munmap(mmap_buffer_, mmap_size_);
+  shm_unlink(mmap_fname);
 }
 
 void
@@ -33,16 +96,14 @@ Scheduler::runWorker()
   while (1){
     MPI_Recv(taskBuffer, sizeof(taskBuffer), MPI_BYTE, parent, 
       MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
-
-    //int count; MPI_Get_count(&stat, MPI_BYTE, &count);
-    //printf("got count %d for tag %d\n", count, stat.MPI_TAG);
-
+    int size;
+    MPI_Get_count(&stat, MPI_BYTE, &size);
     if (stat.MPI_TAG == terminate_tag){
       return;
     } else {
       auto t = reinterpret_cast<Task*>(taskBuffer);
       auto runner = TaskRunner::get(t->typeID());
-      runner->run(t);
+      runner->run(t, size);
     }
   }
 }

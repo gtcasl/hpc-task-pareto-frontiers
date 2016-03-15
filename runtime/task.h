@@ -1,3 +1,7 @@
+#ifndef _test_runtime_task_h_
+#define _test_runtime_task_h_
+
+#include <iostream>
 #include <sched.h>
 #include <type_traits>
 #include <mpi.h>
@@ -12,6 +16,7 @@ struct cpu_set_t {};
 #define sched_setaffinity(...)
 #define CPU_ZERO(...)
 #endif
+
 
 class Task {
  public:
@@ -93,7 +98,7 @@ class Task {
 
 class TaskRunner {
  public:
-  virtual void run(Task* t) = 0;
+  virtual void run(Task* t, int size) = 0;
 
   static void store(int id, TaskRunner* r){
     runners_[id] = r;
@@ -168,8 +173,13 @@ class TaskRunner_impl : public TaskRunner
 {
   typedef Task_tmpl<Fxn,First,Args...> TaskType;
  public:
-  void run(Task* t)
+  void run(Task* t, int size)
   {
+    if (sizeof(TaskType) != size){
+      std::cerr << "type mismatch between task received and runner on ID " 
+        << t->typeID() << std::endl;
+      abort();
+    }
     auto theTask = static_cast<TaskType*>(t);
     theTask->setup();
     theTask->run();
@@ -209,3 +219,6 @@ task(Fxn f, int id, const std::tuple<Args...>& t){
   return new impl::Task_tmpl<Fxn,Args...>(t,id);
 }
 
+template <class T> std::map<int,T> impl::FunctionMap<T>::functions_;
+
+#endif
