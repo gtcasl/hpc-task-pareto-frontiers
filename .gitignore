@@ -3,3 +3,4 @@ doc/out
 src/spmv
 *.o
 src/blas
+runtime/run

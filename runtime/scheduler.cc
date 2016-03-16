@@ -10,7 +10,7 @@
 #include <sys/stat.h> /* For mode constants */
 #include <fcntl.h> /* For O_* constants */
 
-#define __USE_GNU
+#define __GNU_SOURCE
 #include <sched.h>
 
 #define error(...) fprintf(stderr, __VA_ARGS__)
