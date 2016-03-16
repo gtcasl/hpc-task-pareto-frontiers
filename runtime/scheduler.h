@@ -52,8 +52,6 @@ class Scheduler
 
   void allocateHeap(int ncopies);
 
-  void assignBuffers();
-
   void deallocateHeap();
 
   template <class T>
@@ -67,34 +65,16 @@ class Scheduler
     total_buffer_size_ += size;
   }
 
-  template <class T>
-  void addNeededBuffers(
-    Buffer<T>& buf1, 
-    Buffer<T>& buf2){
-    addNeededBuffer(buf1);
-    addNeededBuffer(buf2);
-  }
-
-  template <class T>
-  void addNeededBuffers(
-    Buffer<T>& buf1, 
-    Buffer<T>& buf2, 
-    Buffer<T>& buf3){
-    addNeededBuffer(buf1);
-    addNeededBuffer(buf2);
-    addNeededBuffer(buf3);
-  }
-
-  template <class T>
-  void addNeededBuffers(
-    Buffer<T>& buf1, 
-    Buffer<T>& buf2, 
-    Buffer<T>& buf3, 
-    Buffer<T>& buf4){
-    addNeededBuffer(buf1);
-    addNeededBuffer(buf2);
-    addNeededBuffer(buf3);
-    addNeededBuffer(buf4);
+  template <class... Ts>
+  void addNeededBuffers(Buffer<Ts>&... bufs){
+    // To call a function on each element of the parameter pack, 
+    // we need to play some tricks. First, we make a dummy array and
+    // take advantage of initializer list expansion for parameter packs.
+    // Then, since the function we call returns void, we have to force it
+    // to return a number, using the comma operator. Finally, since this 
+    // function can be called with zero parameters, we need to make sure 
+    // that the dummy array is at least one element long.
+    int dummy[] = { 0, (addNeededBuffer(bufs), 0)... };
   }
 
   template <class T>
@@ -107,34 +87,10 @@ class Scheduler
     }
   }
 
-  template <class T>
-  void assignBuffers(
-    Buffer<T>& buf1, 
-    Buffer<T>& buf2){
-    assignBuffer(buf1);
-    assignBuffer(buf2);
-  }
-
-  template <class T>
-  void assignBuffers(
-    Buffer<T>& buf1, 
-    Buffer<T>& buf2, 
-    Buffer<T>& buf3){
-    assignBuffer(buf1);
-    assignBuffer(buf2);
-    assignBuffer(buf3);
-  }
-
-  template <class T>
-  void assignBuffers(
-    Buffer<T>& buf1, 
-    Buffer<T>& buf2, 
-    Buffer<T>& buf3, 
-    Buffer<T>& buf4){
-    assignBuffer(buf1);
-    assignBuffer(buf2);
-    assignBuffer(buf3);
-    assignBuffer(buf4);
+  template<class... Ts>
+  void assignBuffers(Buffer<Ts>&... bufs){
+    // see the note for addNeededBuffers for explanation of variadic template
+    int dummy[] = { 0, (assignBuffer(bufs), 0)... };
   }
 
   void nextIter() {
@@ -153,7 +109,6 @@ class Scheduler
  private:
   void runWorker();
   void terminateWorkers();
-  void _addNeededBuffer(size_t size, void** buffer);
   virtual void runMaster(Task* root) = 0;
 
   static void* mmap_buffer_;
