@@ -3,6 +3,9 @@ SRC := $(shell ls *.cc)
 HEADERS := $(shell ls *.h)
 
 target := gcc
+#target := darwin
+#target := mic
+#target := intel
 
 CXX :=    mpicxx
 CC :=     mpicc
@@ -17,6 +20,17 @@ LDFLAGS := $(LDFLAGS) -stdlib=libc++
 CPPFLAGS := $(CPPFLAGS) -Dno_affinity
 endif
 
+ifeq ($(target),intel)
+CXX := $(CXX) -cxx=icpc
+CC := $(CC) -cc=icc
+endif
+
+ifeq ($(target),mic)
+CXXFLAGS := $(CXXFLAGS) -mmic
+CXX := $(CXX) -cxx=icpc
+CC := $(CC) -cc=icc
+endif
+
 OBJ := $(SRC:.cc=.o) 
 OBJ := $(OBJ:.cpp=.o)
 OBJ := $(OBJ:.c=.o)
@@ -26,7 +40,7 @@ OBJ := $(OBJ:.c=.o)
 all: $(TARGET)
 
 $(TARGET): $(OBJ) 
-	$(CXX) -o $@ $+ $(LDFLAGS) $(LIBS) 
+	$(CXX) -o $@ $+ $(CXXFLAGS) $(LDFLAGS) $(LIBS) 
 
 %.o: %.cc  $(HEADERS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
