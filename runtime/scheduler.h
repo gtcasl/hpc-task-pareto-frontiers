@@ -13,11 +13,23 @@ class Buffer {
 
   Buffer(int n) : mmap_offset(0), buffer(0), nelems(n) {}
 
+  Buffer(int n, int offset) : mmap_offset(offset), buffer(0), nelems(n) {}
+
   Buffer(const Buffer<T>& t);
 
   T&
   operator[](int idx){
     return buffer[idx];
+  }
+
+  T&
+  operator*(){
+    return *buffer;
+  }
+
+  Buffer<T>
+  offset(int off) const {
+    return Buffer<T> (nelems, mmap_offset + off);
   }
 
   const T&

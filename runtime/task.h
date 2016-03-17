@@ -18,6 +18,9 @@ struct cpu_set_t {};
 #endif
 
 
+#define new_task(taskName, ...) \
+  task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
+
 class Task {
  public:
   void setCPUState(int s){
@@ -208,9 +211,9 @@ registerFunction(typename myFxnTraits::Fxn f, int id){
   return 0;
 }
 
-#define RegisterTask(fxn,id,ret,...) \
+#define RegisterTask(fxn,ret,...) \
   typedef impl::FxnTraits<ret,__VA_ARGS__> type_traits_##fxn; \
-  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,id);
+  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id);
   
 
 template <typename Fxn, typename... Args>

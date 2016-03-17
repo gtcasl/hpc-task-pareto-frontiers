@@ -2,8 +2,8 @@
 
 typedef Buffer<double> DoublePtr;
 
-enum fxn_id {
-  ddot_id = 0
+static enum fxn_id {
+  my_ddot_id = 0
 } test_ids;
 
 void my_ddot(int n, Buffer<double> a, Buffer<double> b, Buffer<double> c)
@@ -16,9 +16,9 @@ void my_ddot(int n, Buffer<double> a, Buffer<double> b, Buffer<double> c)
 
 Task* initDag(int nelems, DoublePtr a, DoublePtr b, DoublePtr c, DoublePtr d)
 {
-  Task* root = task(my_ddot, ddot_id, std::make_tuple(nelems,a,a,b));
-  Task* next = task(my_ddot, ddot_id, std::make_tuple(nelems,a,b,c));
-  Task* final = task(my_ddot, ddot_id, std::make_tuple(nelems,b,b,d));
+  Task* root = new_task(my_ddot, nelems,a,a,b);
+  Task* next = new_task(my_ddot, nelems,a,b,c);
+  Task* final = new_task(my_ddot, nelems,b,b,d);
   next->dependsOn(root);
   final->dependsOn(root);
   return root;
@@ -26,7 +26,7 @@ Task* initDag(int nelems, DoublePtr a, DoublePtr b, DoublePtr c, DoublePtr d)
 
 int run_ddot(int argc, char** argv)
 {
-  RegisterTask(my_ddot, ddot_id, 
+  RegisterTask(my_ddot,
     void, //return
     int, Buffer<double>, Buffer<double>, Buffer<double>); //params
 

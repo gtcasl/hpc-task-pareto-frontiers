@@ -1,9 +1,9 @@
 TARGET := run
-SRC := $(shell ls *.cc) 
+SRC := $(shell ls *.cc) cg/cg.cc
 HEADERS := $(shell ls *.h)
 
-target := gcc
-#target := darwin
+#target := gcc
+target := darwin
 #target := mic
 #target := intel
 

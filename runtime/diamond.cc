@@ -41,7 +41,7 @@ initDag()
 
 int diamond(int argc, char** argv)
 {
-  RegisterTask(test,test_id,
+  RegisterTask(test,
     void, int, int, int);
 
   Scheduler* scheduler = new BasicScheduler;
