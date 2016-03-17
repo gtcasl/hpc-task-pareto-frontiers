@@ -2,15 +2,15 @@ TARGET := run
 SRC := $(shell ls *.cc) 
 HEADERS := $(shell ls *.h)
 
-target := darwin
+target := gcc
 
 CXX :=    mpicxx
 CC :=     mpicc
 CXXFLAGS := -fPIC
-CPPFLAGS := -I. -std=c++11
+CPPFLAGS := -I. -std=c++11 
 LIBDIR :=   
 PREFIX :=   
-LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib -stdlib=libc++
+LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib 
 
 ifeq ($(target),darwin)
 LDFLAGS := $(LDFLAGS) -stdlib=libc++

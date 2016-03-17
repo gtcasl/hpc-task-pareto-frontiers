@@ -2,7 +2,7 @@
 #define _test_runtime_scheduler_h_
 
 #include <vector>
-#include "task.h"
+#include <task.h>
 
 template <class T>
 class Buffer {
@@ -15,8 +15,6 @@ class Buffer {
 
   Buffer(const Buffer<T>& t);
 
-  Buffer(Buffer<T>&&) = delete;
-  
   T&
   operator[](int idx){
     return buffer[idx];

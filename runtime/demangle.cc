@@ -2,9 +2,6 @@
 #include <iostream>
 #include <cxxabi.h>
 
-
-
-
 const char* demangle(const char* name)
 {
   int     status;
@@ -16,3 +13,4 @@ const char* demangle(const char* name)
    
   return 0;
 }
+
