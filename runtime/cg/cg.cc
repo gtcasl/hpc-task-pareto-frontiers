@@ -7,6 +7,8 @@ typedef Buffer<IntArray> IntChunkArray;
 typedef Buffer<DoubleArray> DoubleChunkArray;
 
 
+#define debug(x) printf(#x "\n");
+
 struct config
 {
   int nchunks;
@@ -23,6 +25,7 @@ static enum fxn_id {
   dxapy_id,
   spmv_id,
   copy_id,
+  subtract_id,
   sum_contribs_id,
   comp_alpha_id,
   comp_beta_id,
@@ -47,12 +50,23 @@ void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 }
 
 //Compute Ax = y
-void spmv(config cfg, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPerRow, IntArray nonzerosInRow)
+void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPerRow, IntArray nonzerosInRow)
 {
+  debug(spmv);
+}
+
+
+/**
+ * Compute C = A - B
+ */
+static void subtract(int n, DoubleArray C, DoubleArray A, DoubleArray B)
+{
+  debug(subtract);
 }
 
 static void ddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
 {
+  debug(ddot);
 }
 
 /**
@@ -64,6 +78,7 @@ static void ddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
  */
 void daxpy(int n, double a, DoubleArray x, DoubleArray y)
 {
+  debug(daxpy);
 }
 
 /**
@@ -75,31 +90,36 @@ void daxpy(int n, double a, DoubleArray x, DoubleArray y)
  */
 void dxapy(int n, double a, DoubleArray x, DoubleArray y)
 {
+  debug(dxapy);
   double scale = (1+a);
   //scale vector Y by (1+a) - then add in 1.0 times x
-  daxpy(n, 1.0, x, y);
 }
 
 void copy(int n, DoubleArray dst, DoubleArray src)
 {
+  debug(copy);
 }
 
 void comp_alpha(double rsq, double pAp, DoublePtr result)
 {
+  debug(comp_alpha);
 }
 
 void comp_beta(double rsq, double rsqNextIter, DoublePtr result)
 {
+  debug(comp_beta);
 }
 
 void assign(DoublePtr dst, DoublePtr src)
 {
+  debug(assign);
   *dst = *src;
 }
 
 
-void start()
+void start(int ignore)
 {
+  debug(start);
   //no op for organizational purposes
 }
 
@@ -127,15 +147,15 @@ initDag(config cfg,
   IntChunkArray  nonzerosChunks
 )
 {
-  Task* root = task(start, start_id, std::make_tuple());
-  Task* sumRsq  = new_task(sum_contribs, cfg, RsqContribs, Rsq);
+  Task* root = new_task(start, 1);
+  Task* sumRsq  = new_task(sum_contribs, cfg.nchunks, RsqContribs, Rsq);
   std::vector<Task*> lastWavefront(cfg.nchunks);
   for (int i=0; i < cfg.nchunks; ++i){
     //have to start by computing Ax
-    Task* compAx  = new_task(spmv, cfg, AChunks[i], x, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
-    Task* compR0  = new_task(daxpy, cfg, -1, bChunks[i], ApChunks[i]);
+    Task* compAx  = new_task(spmv, cfg.nrows, AChunks[i], x, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
+    Task* compR0  = new_task(subtract, cfg.nrows, rChunks[i], bChunks[i], ApChunks[i]);
     Task* compP0  = new_task(copy, cfg.nrows, pChunks[i], rChunks[i]);
-    Task* compRsq = new_task(ddot,  cfg, rChunks[i], rChunks[i], RsqContribs.offset(i));
+    Task* compRsq = new_task(ddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
 
     compAx->dependsOn(root);
     compP0->dependsOn(compR0);
@@ -148,26 +168,27 @@ initDag(config cfg,
   Task* iterPrecursor = sumRsq;
   //now we enter the loop
   for (int iter=0; iter < cfg.niter; ++iter){
-    Task* sum_pAp = new_task(sum_contribs, cfg, pApContribs, pAp);
+    Task* sum_pAp = new_task(sum_contribs, cfg.nchunks, pApContribs, pAp);
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compAp    = new_task(spmv,  cfg, AChunks[i], p, ApChunks[i]);
-      Task* comp_pAp  = new_task(ddot,  cfg, ApChunks[i], pChunks[i], pApContribs.offset(i));
+      Task* compAp    = new_task(spmv,  cfg.nrows, AChunks[i], p, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
+      Task* comp_pAp  = new_task(ddot,  cfg.nrows, ApChunks[i], pChunks[i], pApContribs.offset(i));
       compAp->dependsOn(lastWavefront[i]);
       comp_pAp->dependsOn(compAp);
       sum_pAp->dependsOn(comp_pAp);
     }
 
-    Task* compAlpha = new_task(comp_alpha, cfg, alpha, pAp, Rsq);
+    Task* compAlpha = new_task(comp_alpha, *alpha, *pAp, Rsq);
     compAlpha->dependsOn(iterPrecursor);
     compAlpha->dependsOn(sum_pAp);
 
-    sumRsq = new_task(sum_contribs, cfg, RsqContribs, RsqNextIter);
+    sumRsq = new_task(sum_contribs, cfg.nchunks, RsqContribs, RsqNextIter);
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compX     = new_task(daxpy, cfg, *alpha, pChunks[i], xChunks[i]);
-      Task* compR     = new_task(daxpy, cfg, -(*alpha), rChunks[i], ApChunks[i]);
-      Task* compRsq   = new_task(ddot,  cfg, rChunks[i], rChunks[i], RsqContribs.offset(i));
+      Task* compX     = new_task(daxpy, cfg.nrows, *alpha, pChunks[i], xChunks[i]);
+      Task* compR     = new_task(daxpy, cfg.nrows, -(*alpha), ApChunks[i], rChunks[i]);
+      Task* compRsq   = new_task(ddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
       compX->dependsOn(compAlpha);
       compR->dependsOn(compAlpha);
+      compRsq->dependsOn(compR);
       sumRsq->dependsOn(compRsq);
     }
 
@@ -177,7 +198,7 @@ initDag(config cfg,
     setEqual->dependsOn(sumRsq);
 
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compP  = new_task(dxapy, cfg, *beta, pChunks[i], rChunks[i]);
+      Task* compP  = new_task(dxapy, cfg.nrows, *beta, rChunks[i], pChunks[i]);
       compP->dependsOn(compBeta);
       lastWavefront[i] = compP;
     }
@@ -195,25 +216,29 @@ int cg(int argc, char** argv)
   Scheduler* sch = new BasicScheduler;
   sch->init(argc, argv);
 
+  RegisterTask(start,void,int);
   RegisterTask(sum_contribs, void, int, DoubleArray, DoublePtr);
-  RegisterTask(spmv, void, config, DoubleArray, DoubleArray, DoubleArray, IntArray, IntArray);
+  RegisterTask(spmv, void, int, DoubleArray, DoubleArray, DoubleArray, IntArray, IntArray);
   RegisterTask(ddot, void, int, DoubleArray, DoubleArray, DoublePtr);
   RegisterTask(daxpy, void, int, double, DoubleArray, DoubleArray);
   RegisterTask(dxapy, void, int, double, DoubleArray, DoubleArray);
   RegisterTask(comp_alpha, void, double, double, DoublePtr);
   RegisterTask(comp_beta, void, double, double, DoublePtr);
   RegisterTask(assign, void, DoublePtr, DoublePtr);
+  RegisterTask(copy,void,int,DoubleArray,DoubleArray);
+  RegisterTask(subtract,void,int,DoubleArray,DoubleArray,DoubleArray);
 
   config cfg;
   int nx = 10, ny = 10, nz = 10;
-  int ncopies = 2;
+  int ncopies = 1;
   int nrows = nx*ny*nz;
   int nnz_per_row = 27;
-  int nchunks = 2;
+  int nchunks = 3;
   cfg.nchunks = nchunks;
   cfg.nnz_per_row = nrows;
   cfg.nrows = nx*ny*nz;
   cfg.ncols = cfg.nrows;
+  cfg.niter = 1;
 
   int chunkSize = nrows / nchunks;
 
@@ -241,15 +266,15 @@ int cg(int argc, char** argv)
   IntChunkArray    nnzPerRowChunks(nchunks);
   IntChunkArray    nonzerosChunks(nchunks);
 
-  for (int i=0; i < nchunks; ++i){
-    pChunks[i] = p.offset(i*chunkSize);
-    xChunks[i] = x.offset(i*chunkSize);
-    rChunks[i] = r.offset(i*chunkSize);
-    nnzPerRowChunks[i] = nnzPerRow.offset(i*chunkSize);
-  }
-
   sch->allocateHeap(ncopies);
+
   for (int i=0; i < ncopies; ++i, sch->nextIter()){
+    for (int i=0; i < nchunks; ++i){
+      pChunks[i] = p.offset(i*chunkSize);
+      xChunks[i] = x.offset(i*chunkSize);
+      rChunks[i] = r.offset(i*chunkSize);
+      nnzPerRowChunks[i] = nnzPerRow.offset(i*chunkSize);
+    }
     generate_problem_27pt(nx,ny,nz,chunkSize,A,nonzeros,nnzPerRow,bChunks,xChunks,AChunks,nonzerosChunks);
   }
 
@@ -269,10 +294,8 @@ int cg(int argc, char** argv)
   }
   sch->deallocateHeap();
 
-
-
-
-
   return 0;
 }
+
+RegisterTest("cg", cg);
 

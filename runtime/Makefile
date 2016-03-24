@@ -2,14 +2,16 @@ TARGET := run
 SRC := $(shell ls *.cc) $(shell ls cg/*.cc)
 HEADERS := $(shell ls *.h)
 
-#target := gcc
-target := darwin
+target := gcc
+#target := darwin
 #target := mic
 #target := intel
 
-CXX :=    mpicxx
-CC :=     mpicc
-CXXFLAGS := -fPIC
+MPI := $(HOME)/Programs/install/mpich2/bin
+
+CXX :=    $(MPI)/mpicxx
+CC :=     $(MPI)/mpicc
+CXXFLAGS := -fPIC -O0 -g
 CPPFLAGS := -I. -std=c++11 
 LIBDIR :=   
 PREFIX :=   

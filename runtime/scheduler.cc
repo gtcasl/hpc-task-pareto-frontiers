@@ -25,7 +25,7 @@ Scheduler::init(int argc, char** argv)
   MPI_Init(&argc, &argv);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank_);
   MPI_Comm_size(MPI_COMM_WORLD, &nproc_);
-  assert(nproc_ > 1);
+  //assert(nproc_ > 1);
   nworkers_ = nproc_ - 1;
 }
 
@@ -50,6 +50,7 @@ Scheduler::assignBuffer(BufferBase* buf){
   else {
     buf->mmap_offset += total_buffer_size_;
   }
+  buf->buffer = relocatePointer(buf->mmap_offset);
 }
 
 void
@@ -87,6 +88,10 @@ Scheduler::allocateHeap(int ncopies)
 
   //printf("allocated heap pointer %p of size %lu on rank %d\n", 
   //  mmap_buffer_, mmap_size_, rank_);
+  
+  for (auto& buf : buffers_){
+    assignBuffer(buf);
+  }
 
 }
 
@@ -132,6 +137,10 @@ Scheduler::runWorker()
     } else {
       auto t = reinterpret_cast<Task*>(taskBuffer);
       auto runner = TaskRunner::get(t->typeID());
+      if (!runner){
+        fprintf(stderr, "No runner registered for type ID %d\n", t->typeID());
+        abort();
+      }
       runner->run(t, size);
     }
   }

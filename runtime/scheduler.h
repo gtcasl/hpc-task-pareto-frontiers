@@ -9,6 +9,7 @@ class BufferBase
  public:
   size_t mmap_offset;
   int nelems;
+  void* buffer;
 };
 
 class Scheduler
@@ -60,6 +61,7 @@ class Scheduler
       fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
       abort();
     }
+    global = this;
   }
 
  private:
@@ -109,8 +111,6 @@ class Scheduler
 template <class T>
 class Buffer : public BufferBase {
  public:
-  T* buffer;
-
   Buffer(int n) {
     nelems = 0;
     mmap_offset = 0;
@@ -132,14 +132,20 @@ class Buffer : public BufferBase {
     buffer = (T*) Scheduler::global->relocatePointer(mmap_offset);
   }
 
+  operator T*() {
+    return (T*) buffer;
+  }
+
   T&
   operator[](int idx){
-    return buffer[idx];
+    T* buf = (T*) buffer;
+    return buf[idx];
   }
 
   T&
   operator*(){
-    return *buffer;
+    T* buf = (T*) buffer;
+    return *buf;
   }
 
   Buffer<T>
@@ -149,7 +155,8 @@ class Buffer : public BufferBase {
 
   const T&
   operator[](int idx) const {
-    return buffer[idx];
+    const T* buf = (const T*) buffer;
+    return buf[idx];
   }
 
 };
