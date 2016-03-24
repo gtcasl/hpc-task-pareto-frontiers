@@ -26,6 +26,9 @@ Task* initDag(int nelems, DoublePtr a, DoublePtr b, DoublePtr c, DoublePtr d)
 
 int run_ddot(int argc, char** argv)
 {
+  Scheduler* sch = new BasicScheduler;
+  sch->init(argc, argv);
+
   RegisterTask(my_ddot,
     void, //return
     int, Buffer<double>, Buffer<double>, Buffer<double>); //params
@@ -33,18 +36,12 @@ int run_ddot(int argc, char** argv)
   int nelems = 100;
   int ncopies = 2;
 
-  Scheduler* sch = new BasicScheduler;
-  sch->init(argc, argv);
-
   Buffer<double> a(nelems), b(nelems), c(nelems), d(nelems);
-  sch->addNeededBuffers(a, b, c, d);
 
   sch->allocateHeap(ncopies);
   for (int i=0; i < ncopies; ++i, sch->nextIter()){
     Task* root = 0;
     if (sch->rank() == 0){
-      printf("Assigning buffers for iter %d\n", i);
-      sch->assignBuffers(a, b, c, d);
       root = initDag(nelems,a,b,c,d);
     }
     sch->run(root);

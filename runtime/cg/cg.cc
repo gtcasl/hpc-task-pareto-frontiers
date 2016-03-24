@@ -29,6 +29,19 @@ static enum fxn_id {
   assign_id
 } test_ids;
 
+extern void
+generate_problem_27pt(
+  int nx, int ny, int nz,
+  int chunkSize,
+  DoubleArray A,
+  IntArray nonzeros,
+  IntArray nnzPerRow,
+  DoubleChunkArray bChunks,
+  DoubleChunkArray xChunks,
+  DoubleChunkArray AChunks,
+  IntChunkArray    nonzerosChunks
+);
+
 void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 {
 }
@@ -42,12 +55,29 @@ static void ddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
 {
 }
 
+/**
+ * @brief daxpy  Computes Y = A*X + Y
+ * @param n
+ * @param a
+ * @param x
+ * @param y
+ */
 void daxpy(int n, double a, DoubleArray x, DoubleArray y)
 {
 }
 
+/**
+ * @brief dxapy Computes Y = X + A*Y
+ * @param n
+ * @param a
+ * @param x
+ * @param y
+ */
 void dxapy(int n, double a, DoubleArray x, DoubleArray y)
 {
+  double scale = (1+a);
+  //scale vector Y by (1+a) - then add in 1.0 times x
+  daxpy(n, 1.0, x, y);
 }
 
 void copy(int n, DoubleArray dst, DoubleArray src)
@@ -158,8 +188,13 @@ initDag(config cfg,
   return root;
 }
 
+
 int cg(int argc, char** argv)
 {
+  //ALWAYS Initialize the scheduler first
+  Scheduler* sch = new BasicScheduler;
+  sch->init(argc, argv);
+
   RegisterTask(sum_contribs, void, int, DoubleArray, DoublePtr);
   RegisterTask(spmv, void, config, DoubleArray, DoubleArray, DoubleArray, IntArray, IntArray);
   RegisterTask(ddot, void, int, DoubleArray, DoubleArray, DoublePtr);
@@ -171,6 +206,7 @@ int cg(int argc, char** argv)
 
   config cfg;
   int nx = 10, ny = 10, nz = 10;
+  int ncopies = 2;
   int nrows = nx*ny*nz;
   int nnz_per_row = 27;
   int nchunks = 2;
@@ -188,7 +224,6 @@ int cg(int argc, char** argv)
   DoubleArray Ap(nrows);
   IntArray    nnzPerRow(nrows);
   IntArray    nonzeros(nrows*nnz_per_row);
-  IntArray    rowOffsets(nrows);
   DoubleArray RsqContribs(nchunks);
   DoubleArray pApContribs(nchunks);
   DoublePtr   Alpha(1);
@@ -206,31 +241,36 @@ int cg(int argc, char** argv)
   IntChunkArray    nnzPerRowChunks(nchunks);
   IntChunkArray    nonzerosChunks(nchunks);
 
-  //TODO set up the problem and initialize arrays
-  Scheduler* sch = new BasicScheduler;
-  sch->init(argc, argv);
-
-  sch->addNeededBuffers(p,x,r,A);
-  sch->addNeededBuffers(nnzPerRow, nonzeros, rowOffsets);
-  sch->addNeededBuffers(RsqContribs, pApContribs);
-  sch->addNeededBuffers(Alpha,Beta,Rsq,RsqNextIter);
-
   for (int i=0; i < nchunks; ++i){
     pChunks[i] = p.offset(i*chunkSize);
     xChunks[i] = x.offset(i*chunkSize);
     rChunks[i] = r.offset(i*chunkSize);
-    AChunks[i] = A.offset(i*chunkSize*nnz_per_row);
     nnzPerRowChunks[i] = nnzPerRow.offset(i*chunkSize);
-    nonzerosChunks[i] = nonzeros.offset(i*chunkSize);
   }
 
-  Task* root = initDag(cfg,
-    A, Ap, p, r, x, //full arrays
-    pApContribs, RsqContribs, //reduction arrays
-    Alpha, Beta, pAp, Rsq, RsqNextIter, //double pointers
-    AChunks, ApChunks, bChunks, pChunks, rChunks, xChunks, //double chunk arrays,
-    nnzPerRowChunks, nonzerosChunks //int chunk arrays
-  );
+  sch->allocateHeap(ncopies);
+  for (int i=0; i < ncopies; ++i, sch->nextIter()){
+    generate_problem_27pt(nx,ny,nz,chunkSize,A,nonzeros,nnzPerRow,bChunks,xChunks,AChunks,nonzerosChunks);
+  }
+
+
+  for (int i=0; i < ncopies; ++i, sch->nextIter()){
+    Task* root = 0;
+    if (sch->rank() == 0){
+      root = initDag(cfg,
+        A, Ap, p, r, x, //full arrays
+        pApContribs, RsqContribs, //reduction arrays
+        Alpha, Beta, pAp, Rsq, RsqNextIter, //double pointers
+        AChunks, ApChunks, bChunks, pChunks, rChunks, xChunks, //double chunk arrays,
+        nnzPerRowChunks, nonzerosChunks //int chunk arrays
+      );
+    }
+    sch->run(root);
+  }
+  sch->deallocateHeap();
+
+
+
 
 
   return 0;

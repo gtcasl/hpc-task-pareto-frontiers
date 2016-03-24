@@ -17,8 +17,7 @@
 
 char taskBuffer[1024];
 
-size_t Scheduler::mmap_size_ = 0;
-void*  Scheduler::mmap_buffer_ = 0;
+Scheduler* Scheduler::global = 0;
 
 void 
 Scheduler::init(int argc, char** argv)
@@ -31,6 +30,36 @@ Scheduler::init(int argc, char** argv)
 }
 
 static const char* mmap_fname = "mmap_heap";
+
+void
+Scheduler::addNeededBuffer(BufferBase* buf, size_t size){
+  buf->mmap_offset = total_buffer_size_;
+  if (size % 4096){
+    size_t extra = 4096 - size % 4096;
+    size += extra;
+  }
+  total_buffer_size_ += size;
+  buffers_.push_back(buf);
+}
+
+void
+Scheduler::assignBuffer(BufferBase* buf){
+  if (next_copy_ % ncopies_ == 0){
+    buf->mmap_offset = buf->mmap_offset % total_buffer_size_;
+  }
+  else {
+    buf->mmap_offset += total_buffer_size_;
+  }
+}
+
+void
+Scheduler::nextIter()
+{
+  next_copy_++;
+  for (auto& buf : buffers_){
+    assignBuffer(buf);
+  }
+}
 
 void
 Scheduler::allocateHeap(int ncopies)

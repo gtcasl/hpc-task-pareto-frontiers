@@ -1,5 +1,5 @@
 TARGET := run
-SRC := $(shell ls *.cc) cg/cg.cc
+SRC := $(shell ls *.cc) $(shell ls cg/*.cc)
 HEADERS := $(shell ls *.h)
 
 #target := gcc

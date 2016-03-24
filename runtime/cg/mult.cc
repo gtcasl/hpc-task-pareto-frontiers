@@ -1,26 +1,29 @@
+#include <cg/types.h>
 
 void
 multiply(
   int nrows,
-  double* vector,
-  double* residual,
-  double** matrixRows,
-  int* nnzPerRow,
-  int** nonzerosInRow)
+  DoubleArray vector,
+  DoubleArray residual,
+  DoubleArray matrix,
+  IntArray nnzPerRow,
+  IntArray nonzerosInRow)
 {
+  double* v = vector.buffer;
+  double* r = residual.buffer;
+  double* A = matrix.buffer;
+  int* nonzeros = nonzerosInRow.buffer;
   #pragma omp parallel for
-  for (int r=0; r < nrows; ++r){
+  for (int row=0; row < nrows; ++row){
     double res = 0; 
-    int nnz = nnzPerRow[r];
-    int* nonzeros = nonzerosInRow[r];
-    double* nonzeroVals = matrixRows[r];
+    int nnz = nnzPerRow[row];
     for (int i=0; i < nnz; ++i){
       int col = nonzeros[i];
-      double matrixVal = nonzeroVals[i];
-      double vectorVal = vector[col];
-      res += matrixVal * vectorVal;
+      res += A[i] * v[col];
     }
-    residual[r] = res;
+    A += nnz;
+    nonzeros += nnz;
+    r[row] = res;
   }
 }
 
