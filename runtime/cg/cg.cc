@@ -1,3 +1,4 @@
+#include <mkl.h>
 #include <test.h>
 
 typedef Buffer<double> DoublePtr;
@@ -19,9 +20,9 @@ struct config
 };
 
 static enum fxn_id {
-  ddot_id,
+  myddot_id,
   start_id,
-  daxpy_id,
+  mydaxpy_id,
   dxapy_id,
   spmv_id,
   copy_id,
@@ -47,12 +48,17 @@ generate_problem_27pt(
 
 void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 {
+  debug(sum_contribs);
+  for(int i = 0; i < n; ++i){
+    *result += contribs[i];
+  }
 }
 
 //Compute Ax = y
 void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPerRow, IntArray nonzerosInRow)
 {
   debug(spmv);
+  cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
 }
 
 
@@ -62,11 +68,13 @@ void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPe
 static void subtract(int n, DoubleArray C, DoubleArray A, DoubleArray B)
 {
   debug(subtract);
+  vdSub(n, A, B, C);
 }
 
-static void ddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
+static void myddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
 {
-  debug(ddot);
+  debug(myddot);
+  *result = cblas_ddot(n, A, 1, B, 1);
 }
 
 /**
@@ -76,9 +84,10 @@ static void ddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
  * @param x
  * @param y
  */
-void daxpy(int n, double a, DoubleArray x, DoubleArray y)
+void mydaxpy(int n, double a, DoubleArray x, DoubleArray y)
 {
-  debug(daxpy);
+  debug(mydaxpy);
+  cblas_daxpy(n, a, x, 1, y, 1);
 }
 
 /**
@@ -91,28 +100,33 @@ void daxpy(int n, double a, DoubleArray x, DoubleArray y)
 void dxapy(int n, double a, DoubleArray x, DoubleArray y)
 {
   debug(dxapy);
-  double scale = (1+a);
+  //double scale = (1+a);
   //scale vector Y by (1+a) - then add in 1.0 times x
+  //cblas_dscal(n, a, y, 1);
+  //cblas_daxpy(n, 1.0, x, 1, y, 1);
+  cblas_daxpby(n, 1.0, x, 1, a, y, 1);
 }
 
 void copy(int n, DoubleArray dst, DoubleArray src)
 {
   debug(copy);
+  cblas_dcopy(n, src, 1, dst, 1);
 }
 
 void comp_alpha(double rsq, double pAp, DoublePtr result)
 {
   debug(comp_alpha);
+  *result = rsq / pAp;
 }
 
 void comp_beta(double rsq, double rsqNextIter, DoublePtr result)
 {
   debug(comp_beta);
+  *result = rsqNextIter / rsq;
 }
 
 void assign(DoublePtr dst, DoublePtr src)
 {
-  debug(assign);
   *dst = *src;
 }
 
@@ -155,7 +169,7 @@ initDag(config cfg,
     Task* compAx  = new_task(spmv, cfg.nrows, AChunks[i], x, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
     Task* compR0  = new_task(subtract, cfg.nrows, rChunks[i], bChunks[i], ApChunks[i]);
     Task* compP0  = new_task(copy, cfg.nrows, pChunks[i], rChunks[i]);
-    Task* compRsq = new_task(ddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
+    Task* compRsq = new_task(myddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
 
     compAx->dependsOn(root);
     compP0->dependsOn(compR0);
@@ -171,7 +185,7 @@ initDag(config cfg,
     Task* sum_pAp = new_task(sum_contribs, cfg.nchunks, pApContribs, pAp);
     for (int i=0; i < cfg.nchunks; ++i){
       Task* compAp    = new_task(spmv,  cfg.nrows, AChunks[i], p, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
-      Task* comp_pAp  = new_task(ddot,  cfg.nrows, ApChunks[i], pChunks[i], pApContribs.offset(i));
+      Task* comp_pAp  = new_task(myddot,  cfg.nrows, ApChunks[i], pChunks[i], pApContribs.offset(i));
       compAp->dependsOn(lastWavefront[i]);
       comp_pAp->dependsOn(compAp);
       sum_pAp->dependsOn(comp_pAp);
@@ -183,9 +197,9 @@ initDag(config cfg,
 
     sumRsq = new_task(sum_contribs, cfg.nchunks, RsqContribs, RsqNextIter);
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compX     = new_task(daxpy, cfg.nrows, *alpha, pChunks[i], xChunks[i]);
-      Task* compR     = new_task(daxpy, cfg.nrows, -(*alpha), ApChunks[i], rChunks[i]);
-      Task* compRsq   = new_task(ddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
+      Task* compX     = new_task(mydaxpy, cfg.nrows, *alpha, pChunks[i], xChunks[i]);
+      Task* compR     = new_task(mydaxpy, cfg.nrows, -(*alpha), ApChunks[i], rChunks[i]);
+      Task* compRsq   = new_task(myddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
       compX->dependsOn(compAlpha);
       compR->dependsOn(compAlpha);
       compRsq->dependsOn(compR);
@@ -219,8 +233,8 @@ int cg(int argc, char** argv)
   RegisterTask(start,void,int);
   RegisterTask(sum_contribs, void, int, DoubleArray, DoublePtr);
   RegisterTask(spmv, void, int, DoubleArray, DoubleArray, DoubleArray, IntArray, IntArray);
-  RegisterTask(ddot, void, int, DoubleArray, DoubleArray, DoublePtr);
-  RegisterTask(daxpy, void, int, double, DoubleArray, DoubleArray);
+  RegisterTask(myddot, void, int, DoubleArray, DoubleArray, DoublePtr);
+  RegisterTask(mydaxpy, void, int, double, DoubleArray, DoubleArray);
   RegisterTask(dxapy, void, int, double, DoubleArray, DoubleArray);
   RegisterTask(comp_alpha, void, double, double, DoublePtr);
   RegisterTask(comp_beta, void, double, double, DoublePtr);

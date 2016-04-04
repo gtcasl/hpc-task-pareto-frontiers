@@ -5,17 +5,22 @@ HEADERS := $(shell ls *.h)
 target := gcc
 #target := darwin
 #target := mic
-#target := intel
+target := intel
 
-MPI := $(HOME)/Programs/install/mpich2/bin
+MPI := $(HOME)/Programs/install/mpich2/bin/
+MPI :=
 
-CXX :=    $(MPI)/mpicxx
-CC :=     $(MPI)/mpicc
+CXX :=    $(MPI)mpicxx
+CC :=     $(MPI)mpicc
 CXXFLAGS := -fPIC -O0 -g
-CPPFLAGS := -I. -std=c++11 
+CPPFLAGS := -I. -std=c++11 -mkl
 LIBDIR :=   
 PREFIX :=   
-LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib 
+LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib -lmkl_rt
+
+ifeq ($(target),gcc)
+CXXFLAGS := $(CXXFLAGS) -fopenmp
+endif
 
 ifeq ($(target),darwin)
 LDFLAGS := $(LDFLAGS) -stdlib=libc++
@@ -25,10 +30,11 @@ endif
 ifeq ($(target),intel)
 CXX := $(CXX) -cxx=icpc
 CC := $(CC) -cc=icc
+CXXFLAGS := $(CXXFLAGS) -openmp
 endif
 
 ifeq ($(target),mic)
-CXXFLAGS := $(CXXFLAGS) -mmic
+CXXFLAGS := $(CXXFLAGS) -mmic -openmp
 CXX := $(CXX) -cxx=icpc
 CC := $(CC) -cc=icc
 endif

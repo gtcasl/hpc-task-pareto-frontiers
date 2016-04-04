@@ -19,7 +19,7 @@ struct cpu_set_t {};
 
 
 #define new_task(taskName, ...) \
-  task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
+  make_task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
 
 class Task {
  public:
@@ -218,7 +218,7 @@ registerFunction(typename myFxnTraits::Fxn f, int id){
 
 template <typename Fxn, typename... Args>
 Task*
-task(Fxn f, int id, const std::tuple<Args...>& t){
+make_task(Fxn f, int id, const std::tuple<Args...>& t){
   return new impl::Task_tmpl<Fxn,Args...>(t,id);
 }
 
