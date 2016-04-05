@@ -65,6 +65,11 @@ Scheduler::nextIter()
 void
 Scheduler::allocateHeap(int ncopies)
 {
+
+  if(rank_ == 0){
+    shm_unlink(mmap_fname);
+  }
+  MPI_Barrier(MPI_COMM_WORLD);
   ncopies_ = ncopies;
 
   int fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
@@ -149,6 +154,10 @@ Scheduler::runWorker()
 void
 BasicScheduler::runMaster(Task* root)
 {
+  /* TODO: Add logging to document when decisions are made,
+   * ie, out of power, out of cores, could use more cores, etc
+   */
+
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0
     availableWorkers.push_back(i);

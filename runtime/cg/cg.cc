@@ -52,6 +52,7 @@ void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
   for(int i = 0; i < n; ++i){
     *result += contribs[i];
   }
+  debug(sum_contribs);
 }
 
 //Compute Ax = y
@@ -59,6 +60,7 @@ void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPe
 {
   debug(spmv);
   cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
+  debug(spmv);
 }
 
 
@@ -69,12 +71,14 @@ static void subtract(int n, DoubleArray C, DoubleArray A, DoubleArray B)
 {
   debug(subtract);
   vdSub(n, A, B, C);
+  debug(subtract);
 }
 
 static void myddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
 {
   debug(myddot);
   *result = cblas_ddot(n, A, 1, B, 1);
+  debug(myddot);
 }
 
 /**
@@ -88,6 +92,7 @@ void mydaxpy(int n, double a, DoubleArray x, DoubleArray y)
 {
   debug(mydaxpy);
   cblas_daxpy(n, a, x, 1, y, 1);
+  debug(mydaxpy);
 }
 
 /**
@@ -105,24 +110,28 @@ void dxapy(int n, double a, DoubleArray x, DoubleArray y)
   //cblas_dscal(n, a, y, 1);
   //cblas_daxpy(n, 1.0, x, 1, y, 1);
   cblas_daxpby(n, 1.0, x, 1, a, y, 1);
+  debug(dxapy);
 }
 
 void copy(int n, DoubleArray dst, DoubleArray src)
 {
   debug(copy);
   cblas_dcopy(n, src, 1, dst, 1);
+  debug(copy);
 }
 
 void comp_alpha(double rsq, double pAp, DoublePtr result)
 {
   debug(comp_alpha);
   *result = rsq / pAp;
+  debug(comp_alpha);
 }
 
 void comp_beta(double rsq, double rsqNextIter, DoublePtr result)
 {
   debug(comp_beta);
   *result = rsqNextIter / rsq;
+  debug(comp_beta);
 }
 
 void assign(DoublePtr dst, DoublePtr src)
@@ -135,6 +144,7 @@ void start(int ignore)
 {
   debug(start);
   //no op for organizational purposes
+  debug(start);
 }
 
 Task*
@@ -243,11 +253,17 @@ int cg(int argc, char** argv)
   RegisterTask(subtract,void,int,DoubleArray,DoubleArray,DoubleArray);
 
   config cfg;
-  int nx = 10, ny = 10, nz = 10;
+  if(argc != 6){
+    if (sch->rank() == 0){
+      std::cerr << "Usage: " << argv[1] << " <nx> <ny> <nz> <nchunks>" << std::endl;
+    }
+    return -1;
+  }
+  int nx = atoi(argv[2]), ny = atoi(argv[3]), nz = atoi(argv[4]);
   int ncopies = 1;
   int nrows = nx*ny*nz;
   int nnz_per_row = 27;
-  int nchunks = 3;
+  int nchunks = atoi(argv[5]);
   cfg.nchunks = nchunks;
   cfg.nnz_per_row = nrows;
   cfg.nrows = nx*ny*nz;
