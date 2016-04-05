@@ -46,6 +46,15 @@ generate_problem_27pt(
   IntChunkArray    nonzerosChunks
 );
 
+extern void
+multiply(
+  int nrows,
+  DoubleArray vector,
+  DoubleArray residual,
+  DoubleArray matrix,
+  IntArray nnzPerRow,
+  IntArray nonzerosInRow);
+
 void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 {
   debug(sum_contribs);
@@ -59,7 +68,8 @@ void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPerRow, IntArray nonzerosInRow)
 {
   debug(spmv);
-  cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
+  //cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
+  multiply(nrows, x, y, A, nnzPerRow, nonzerosInRow);
   debug(spmv);
 }
 
