@@ -9,6 +9,8 @@
 #include <sys/mman.h>
 #include <sys/stat.h> /* For mode constants */
 #include <fcntl.h> /* For O_* constants */
+#include <fstream>
+#include <iomanip>
 
 #define __GNU_SOURCE
 #include <sched.h>
@@ -127,6 +129,19 @@ Scheduler::terminateWorkers()
   }
 }
 
+double diff(timespec start, timespec end)
+{
+  timespec temp;
+  if ((end.tv_nsec-start.tv_nsec)<0) {
+    temp.tv_sec = end.tv_sec-start.tv_sec-1;
+    temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+  } else {
+    temp.tv_sec = end.tv_sec-start.tv_sec;
+    temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+  }
+  return temp.tv_sec + (double)temp.tv_nsec / 1000000000.0;
+}
+
 void
 Scheduler::runWorker()
 {
@@ -146,7 +161,19 @@ Scheduler::runWorker()
         fprintf(stderr, "No runner registered for type ID %d\n", t->typeID());
         abort();
       }
+      struct timespec start_time;
+      clock_gettime(CLOCK_MONOTONIC, &start_time);
+      t->addCpus(1,4);
       runner->run(t, size);
+      struct timespec end_time;
+      clock_gettime(CLOCK_MONOTONIC, &end_time);
+      double elapsed_seconds = diff(start_time, end_time);
+
+      // Send elapsed time and num cores to master
+      MPI_Request rqst1, rqst2;
+      MPI_Isend(&elapsed_seconds, 1, MPI_DOUBLE, parent, 0, MPI_COMM_WORLD, &rqst1);
+      int ncores = t->getNumThreads();
+      MPI_Isend(&ncores, 1, MPI_INT, parent, 0, MPI_COMM_WORLD, &rqst2);
     }
   }
 }
@@ -157,6 +184,8 @@ BasicScheduler::runMaster(Task* root)
   /* TODO: Add logging to document when decisions are made,
    * ie, out of power, out of cores, could use more cores, etc
    */
+  std::ofstream logfile{"scheduler.log"};
+  logfile << "task\ttick\tstart\telapsed\tthreads\n";
 
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0
@@ -166,7 +195,9 @@ BasicScheduler::runMaster(Task* root)
   std::list<Task*> runningTasks;
   std::list<Task*> pendingTasks;
 
-  root->run(0); //run the first task on worker 0
+  int tick_number = 0;
+
+  root->run(0, tick_number); //run the first task on worker 0
   runningTasks.push_back(root);
   while (!runningTasks.empty()){
     std::list<Task*>::iterator tmp,
@@ -176,24 +207,43 @@ BasicScheduler::runMaster(Task* root)
       tmp = it++;
       Task* t = *tmp;
       if (t->checkDone()){
+        // read back the elapsed time from the runner and log to file
+        double elapsed_seconds;
+        int nthreads;
+        MPI_Recv(&elapsed_seconds, 1, MPI_DOUBLE, t->worker() + 1, 0,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&nthreads, 1, MPI_INT, t->worker() + 1, 0,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        double start_time = t->getTime().tv_sec + (double)t->getTime().tv_nsec / 1000000000.0;
+        logfile << std::fixed
+                << TaskRunner::get_name(t->typeID()) << "\t"
+                << t->getStartTick() << "\t"
+                << start_time << "\t"
+                << elapsed_seconds << "\t"
+                << nthreads << "\n";
         availableWorkers.push_front(t->worker());
         runningTasks.erase(tmp);
         t->clearListeners(pendingTasks);
       }
     }
 
+    bool increment_tick = true;
     while (!pendingTasks.empty()){
       if (availableWorkers.empty()){
         break;
       }
 
+      if(increment_tick){
+        ++tick_number;
+        increment_tick = false;
+      }
       int worker = availableWorkers.front(); 
       availableWorkers.pop_front();
 
       Task* t = pendingTasks.front();
       pendingTasks.pop_front();
 
-      t->run(worker);
+      t->run(worker, tick_number);
       runningTasks.push_back(t);
     }
   }

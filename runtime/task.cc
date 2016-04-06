@@ -1,6 +1,9 @@
 #include "task.h"
+#include <omp.h>
+#include <iostream>
 
 std::map<int,TaskRunner*> TaskRunner::runners_;
+std::map<int,char*> TaskRunner::names_;
 
 Task::Task(int mySize, int typeID) :  
   nthread_(0),
@@ -15,7 +18,7 @@ Task::Task(int mySize, int typeID) :
 void
 Task::addCpu(int c)
 {
-  sched_setaffinity(0, sizeof(cpu_set_t), &cpumask_);
+  CPU_SET(c, &cpumask_);
 }
 
 void
@@ -54,7 +57,9 @@ Task::checkDone()
 void
 Task::setup()
 {
-  //cpumask stuff would go here
+  int num_threads = CPU_COUNT(&cpumask_);
+  sched_setaffinity(0, sizeof(cpu_set_t), &cpumask_);
+  omp_set_num_threads(num_threads);
 }
 
 void
@@ -78,11 +83,25 @@ Task::clearListeners(std::list<Task*>& ready)
 }
 
 void
-Task::run(int worker)
+Task::run(int worker, int start_tick)
 {
+  start_tick_ = start_tick;
+  clock_gettime(CLOCK_REALTIME, &start_);
   worker_ = worker;
   int rank = worker + 1;
   MPI_Send(this, mySize_, MPI_BYTE, rank, enqueue_tag, MPI_COMM_WORLD);
   MPI_Irecv(&rc_, 1, MPI_INT, rank, done_tag, MPI_COMM_WORLD, &done_request_);
+}
+
+struct timespec
+Task::getTime() const
+{
+  return start_;
+}
+
+int 
+Task::getNumThreads() const
+{
+  return CPU_COUNT(&cpumask_);
 }
 

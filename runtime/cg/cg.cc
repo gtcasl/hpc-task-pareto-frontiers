@@ -9,6 +9,8 @@ typedef Buffer<DoubleArray> DoubleChunkArray;
 
 
 #define debug(x) printf(#x "\n");
+#undef debug
+#define debug(x) 
 
 struct config
 {
@@ -57,20 +59,20 @@ multiply(
 
 void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 {
-  debug(sum_contribs);
+  debug(start sum_contribs);
   for(int i = 0; i < n; ++i){
     *result += contribs[i];
   }
-  debug(sum_contribs);
+  debug(end sum_contribs);
 }
 
 //Compute Ax = y
 void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPerRow, IntArray nonzerosInRow)
 {
-  debug(spmv);
-  //cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
-  multiply(nrows, x, y, A, nnzPerRow, nonzerosInRow);
-  debug(spmv);
+  debug(start spmv);
+  cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
+  //multiply(nrows, x, y, A, nnzPerRow, nonzerosInRow);
+  debug(end spmv);
 }
 
 
@@ -79,16 +81,16 @@ void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPe
  */
 static void subtract(int n, DoubleArray C, DoubleArray A, DoubleArray B)
 {
-  debug(subtract);
+  debug(start subtract);
   vdSub(n, A, B, C);
-  debug(subtract);
+  debug(end subtract);
 }
 
 static void myddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
 {
-  debug(myddot);
+  debug(start myddot);
   *result = cblas_ddot(n, A, 1, B, 1);
-  debug(myddot);
+  debug(end myddot);
 }
 
 /**
@@ -100,9 +102,9 @@ static void myddot(int n, DoubleArray A, DoubleArray B, DoublePtr result)
  */
 void mydaxpy(int n, double a, DoubleArray x, DoubleArray y)
 {
-  debug(mydaxpy);
+  debug(start mydaxpy);
   cblas_daxpy(n, a, x, 1, y, 1);
-  debug(mydaxpy);
+  debug(end mydaxpy);
 }
 
 /**
@@ -114,34 +116,34 @@ void mydaxpy(int n, double a, DoubleArray x, DoubleArray y)
  */
 void dxapy(int n, double a, DoubleArray x, DoubleArray y)
 {
-  debug(dxapy);
+  debug(start dxapy);
   //double scale = (1+a);
   //scale vector Y by (1+a) - then add in 1.0 times x
   //cblas_dscal(n, a, y, 1);
   //cblas_daxpy(n, 1.0, x, 1, y, 1);
   cblas_daxpby(n, 1.0, x, 1, a, y, 1);
-  debug(dxapy);
+  debug(end dxapy);
 }
 
 void copy(int n, DoubleArray dst, DoubleArray src)
 {
-  debug(copy);
+  debug(start copy);
   cblas_dcopy(n, src, 1, dst, 1);
-  debug(copy);
+  debug(end copy);
 }
 
 void comp_alpha(double rsq, double pAp, DoublePtr result)
 {
-  debug(comp_alpha);
+  debug(start comp_alpha);
   *result = rsq / pAp;
-  debug(comp_alpha);
+  debug(end comp_alpha);
 }
 
 void comp_beta(double rsq, double rsqNextIter, DoublePtr result)
 {
-  debug(comp_beta);
+  debug(start comp_beta);
   *result = rsqNextIter / rsq;
-  debug(comp_beta);
+  debug(end comp_beta);
 }
 
 void assign(DoublePtr dst, DoublePtr src)
@@ -152,9 +154,9 @@ void assign(DoublePtr dst, DoublePtr src)
 
 void start(int ignore)
 {
-  debug(start);
+  debug(start start);
   //no op for organizational purposes
-  debug(start);
+  debug(end start);
 }
 
 Task*
@@ -249,6 +251,9 @@ int cg(int argc, char** argv)
   //ALWAYS Initialize the scheduler first
   Scheduler* sch = new BasicScheduler;
   sch->init(argc, argv);
+
+  // disable dynamic thread adjustment in MKL
+  mkl_set_dynamic(0);
 
   RegisterTask(start,void,int);
   RegisterTask(sum_contribs, void, int, DoubleArray, DoublePtr);

@@ -10,6 +10,7 @@
 #include <list>
 #include <set>
 #include <utility>
+#include <omp.h>
 
 #ifdef no_affinity
 struct cpu_set_t {};
@@ -50,7 +51,7 @@ class Task {
 
   int typeID() const { return typeID_; }
 
-  void run(int worker);
+  void run(int worker, int start_tick);
   
   void setup();
   
@@ -71,6 +72,12 @@ class Task {
   }
 
   void clearListeners(std::list<Task*>& ready);
+
+  struct timespec getTime() const;
+
+  int getStartTick() const { return start_tick_; }
+
+  int getNumThreads() const;
   
  protected:
   Task(int mySize, int typeID);
@@ -96,23 +103,30 @@ class Task {
    * The tasks that require this task to complete before running
    */
   std::set<Task*> listeners_;
-
+  struct timespec start_;
+  int start_tick_;
 };
 
 class TaskRunner {
  public:
   virtual void run(Task* t, int size) = 0;
 
-  static void store(int id, TaskRunner* r){
+  static void store(int id, TaskRunner* r, char* name){
     runners_[id] = r;
+    names_[id] = name;
   }
 
   static TaskRunner* get(int id){
     return runners_[id];
   }
 
+  static char* get_name(int id){
+    return names_[id];
+  }
+
  private:
   static std::map<int, TaskRunner*> runners_;
+  static std::map<int, char*> names_;
 };
 
 namespace impl {
@@ -185,6 +199,15 @@ class TaskRunner_impl : public TaskRunner
     }
     auto theTask = static_cast<TaskType*>(t);
     theTask->setup();
+    int cores = CPU_COUNT(t->cpuMask());
+#pragma omp parallel
+{
+    int threads = omp_get_num_threads();
+    if(threads != cores){
+      std::cerr << "Error: unable to set correct number of cores. Have: " 
+                << threads << " but expecting " << cores << std::endl;
+    }
+}
     theTask->run();
     theTask->notifyDone();
   }
@@ -204,16 +227,16 @@ class FxnTraits
 
 template <typename myFxnTraits>
 int
-registerFunction(typename myFxnTraits::Fxn f, int id){
+registerFunction(typename myFxnTraits::Fxn f, int id, char* name){
   impl::FunctionMap<typename myFxnTraits::Fxn>::store(id, f);
   typedef typename myFxnTraits::Runner myRunner;
-  TaskRunner::store(id, new myRunner);
+  TaskRunner::store(id, new myRunner, name);
   return 0;
 }
 
 #define RegisterTask(fxn,ret,...) \
   typedef impl::FxnTraits<ret,__VA_ARGS__> type_traits_##fxn; \
-  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id);
+  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id,#fxn);
   
 
 template <typename Fxn, typename... Args>
