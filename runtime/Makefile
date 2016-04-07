@@ -16,7 +16,7 @@ CXXFLAGS := -fPIC -O0 -g
 CPPFLAGS := -I. -std=c++11 -mkl
 LIBDIR :=   
 PREFIX :=   
-LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib -lmkl_rt
+LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
 
 ifeq ($(target),gcc)
 CXXFLAGS := $(CXXFLAGS) -fopenmp
@@ -31,12 +31,14 @@ ifeq ($(target),intel)
 CXX := $(CXX) -cxx=icpc
 CC := $(CC) -cc=icc
 CXXFLAGS := $(CXXFLAGS) -openmp
+LDFLAGS := $(LDFLAGS) -lmkl_rt
 endif
 
 ifeq ($(target),mic)
 CXXFLAGS := $(CXXFLAGS) -mmic -openmp
 CXX := $(CXX) -cxx=icpc
 CC := $(CC) -cc=icc
+LDFLAGS := $(LDFLAGS) -L$(MKLROOT)/lib/mic -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core
 endif
 
 OBJ := $(SRC:.cc=.o) 

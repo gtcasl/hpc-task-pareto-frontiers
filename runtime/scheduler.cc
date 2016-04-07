@@ -87,6 +87,7 @@ Scheduler::allocateHeap(int ncopies)
 
   ftruncate(fd, mmap_size_);
 
+  assert(mmap_size_ % 4096 == 0 && "BAD MMAP SIZE");
   mmap_buffer_ = mmap(NULL, mmap_size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
   if (mmap_buffer_ == ((void*)-1)){
     error("bad mmap on shm_open %s:%d: error=%d",

@@ -9,8 +9,8 @@ typedef Buffer<DoubleArray> DoubleChunkArray;
 
 
 #define debug(x) printf(#x "\n");
-#undef debug
-#define debug(x) 
+//#undef debug
+//#define debug(x) 
 
 struct config
 {
@@ -19,6 +19,13 @@ struct config
   int nrows;
   int ncols;
   int niter;
+  void print(){
+    std::cout << "nchunks: " << nchunks << "\n"
+              << "nnz_per_row: " << nnz_per_row << "\n"
+              << "nrows: " << nrows<< "\n"
+              << "ncols: " << ncols<< "\n"
+              << "niter: " << niter<< "\n";
+  }
 };
 
 static enum fxn_id {
@@ -70,8 +77,8 @@ void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPerRow, IntArray nonzerosInRow)
 {
   debug(start spmv);
-  cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
-  //multiply(nrows, x, y, A, nnzPerRow, nonzerosInRow);
+  //cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
+  multiply(nrows, x, y, A, nnzPerRow, nonzerosInRow);
   debug(end spmv);
 }
 
@@ -284,6 +291,10 @@ int cg(int argc, char** argv)
   cfg.nrows = nx*ny*nz;
   cfg.ncols = cfg.nrows;
   cfg.niter = 1;
+
+  if(sch->rank() == 0){
+    cfg.print();
+  }
 
   int chunkSize = nrows / nchunks;
 
