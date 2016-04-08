@@ -56,13 +56,15 @@ class Scheduler
     mmap_buffer_(0),
     mmap_size_(0),
     total_buffer_size_(0),
-    next_copy_(0) {
+    next_copy_(0),
+    num_available_cores_(NUM_THREADS){
     if (global){
       fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
       abort();
     }
     global = this;
   }
+  int num_available_cores_;
 
  private:
   void addNeededBuffer(BufferBase* buf, size_t size);

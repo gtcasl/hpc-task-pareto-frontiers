@@ -9,8 +9,8 @@ typedef Buffer<DoubleArray> DoubleChunkArray;
 
 
 #define debug(x) printf(#x "\n");
-//#undef debug
-//#define debug(x) 
+#undef debug
+#define debug(x) 
 
 struct config
 {

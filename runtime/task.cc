@@ -1,9 +1,13 @@
 #include "task.h"
 #include <omp.h>
 #include <iostream>
+#include <limits>
 
 std::map<int,TaskRunner*> TaskRunner::runners_;
 std::map<int,char*> TaskRunner::names_;
+std::map<int,std::vector<double> > TaskRunner::times_;
+std::map<int,double> TaskRunner::min_times_;
+std::map<int,int> TaskRunner::min_threads_;;
 
 Task::Task(int mySize, int typeID) :  
   nthread_(0),
@@ -58,6 +62,10 @@ void
 Task::setup()
 {
   int num_threads = CPU_COUNT(&cpumask_);
+  if(num_threads == 0){
+    std::cerr << "Error: task never given thread assignment\n";
+    return;
+  }
   sched_setaffinity(0, sizeof(cpu_set_t), &cpumask_);
   omp_set_num_threads(num_threads);
 }
@@ -103,5 +111,22 @@ int
 Task::getNumThreads() const
 {
   return CPU_COUNT(&cpumask_);
+}
+
+double Task::estimateTime() const
+{
+  double my_time = TaskRunner::get_min_time(typeID_);
+  double children_time = 0.0;
+  if(!listeners_.empty()){
+    double min_time = std::numeric_limits<double>::infinity();
+    for(const auto& listener : listeners_){
+      double listener_time = listener->estimateTime();
+      if(listener_time < min_time){
+        min_time = listener_time;
+      }
+    }
+    children_time = min_time;
+  }
+  return my_time + children_time;
 }
 
