@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <task.h>
+#include <unordered_set>
 
 class BufferBase
 {
@@ -54,6 +55,14 @@ class Scheduler
     return ret;
   }
 
+  int numAvailableCores() const {
+    return available_cores_.size();
+  }
+
+  void returnCpu(int cpu);
+
+  int claimCpu();
+
   virtual ~Scheduler(){
     global = 0;
   }
@@ -63,15 +72,17 @@ class Scheduler
     mmap_buffer_(0),
     mmap_size_(0),
     total_buffer_size_(0),
-    next_copy_(0),
-    num_available_cores_(NUM_THREADS){
+    next_copy_(0)
+  {
     if (global){
       fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
       abort();
     }
     global = this;
+    for(int i = 0; i < NUM_THREADS; ++i){
+      available_cores_.insert(i);
+    }
   }
-  int num_available_cores_;
 
  private:
   void addNeededBuffer(BufferBase* buf, size_t size);
@@ -118,6 +129,8 @@ class Scheduler
   int nworkers_;
   int rank_;
   int nproc_;
+
+  std::unordered_set<int> available_cores_;
 };
 
 template <class T>

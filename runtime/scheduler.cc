@@ -14,6 +14,7 @@
 #include <sys/time.h>
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
 
 #define __GNU_SOURCE
 #include <sched.h>
@@ -168,7 +169,6 @@ Scheduler::runWorker()
         fprintf(stderr, "No runner registered for type ID %d\n", t->typeID());
         abort();
       }
-      t->addCpus(1,4);
       double start = getTime();
       runner->run(t, size);
       double stop = getTime();
@@ -197,6 +197,20 @@ Scheduler::getTime() const
 #endif
 }
 
+void Scheduler::returnCpu(int cpu)
+{
+  auto res = available_cores_.insert(cpu);
+  assert(res.second && "Error: Trying to double free a cpu");
+}
+
+int Scheduler::claimCpu()
+{
+  assert(numAvailableCores() > 0 && "Error: should never try to claim a cpu if none are available");
+  int cpu = *available_cores_.begin();
+  available_cores_.erase(available_cores_.begin());
+  return cpu;
+}
+
 void
 BasicScheduler::runMaster(Task* root)
 {
@@ -213,12 +227,12 @@ BasicScheduler::runMaster(Task* root)
 
   std::list<Task*> runningTasks;
   std::list<Task*> pendingTasks;
+  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
 
   int tick_number = 0;
 
-  root->run(0, tick_number); //run the first task on worker 0
-  runningTasks.push_back(root);
-  while (!runningTasks.empty()){
+  pendingTasks.push_back(root);
+  do{
     std::list<Task*>::iterator tmp,
       it = runningTasks.begin(),
       end = runningTasks.end();
@@ -243,7 +257,10 @@ BasicScheduler::runMaster(Task* root)
         availableWorkers.push_front(t->worker());
         runningTasks.erase(tmp);
         t->clearListeners(pendingTasks);
-        num_available_cores_ += nthreads;
+        for(const auto& cpu : taskCpuAssignments[t]){
+          returnCpu(cpu);
+        }
+        taskCpuAssignments[t].clear();
       }
     }
 
@@ -259,10 +276,10 @@ BasicScheduler::runMaster(Task* root)
         s_star[t] = minthreads;
         sum_s += minthreads;
       }
-      if(sum_s > num_available_cores_){
+      if(sum_s > numAvailableCores()){
         std::cout << "Scaling desired threads to those available\n";
         for(auto& s : s_star){
-          s.second = std::floor((double)num_available_cores_ / sum_s * s.second);
+          s.second = std::floor((double)numAvailableCores() / sum_s * s.second);
         }
       }else{
         //std::cout << "Enough threads to go around\n";
@@ -282,9 +299,6 @@ BasicScheduler::runMaster(Task* root)
         blevels[t] = blevel;
       }
       while(1){
-        // TODO: What about oscillations? We keep swapping back and for assigning
-        // threads from one task to another, never minimizing the distance and never
-        // running out of threads to assign.
         Task* min = std::min_element(std::begin(blevels), std::end(blevels),
                                     [](const std::pair<Task*,double>& a,
                                        const std::pair<Task*,double>& b){
@@ -336,17 +350,23 @@ BasicScheduler::runMaster(Task* root)
         Task* task = *task_it;
         auto removed = task_it++;
         if(s_star[task] == 0){
-          std::cout << "ZERO" << std::endl;
           continue;
         }
         pendingTasks.erase(removed);
         // assign s_star[task] threads
+        for(int i = 0; i < s_star[task]; ++i){
+          // get an available cpu
+          int cpu = claimCpu();
+          // add it to the task
+          task->addCpu(cpu);
+          taskCpuAssignments[task].insert(cpu);
+        }
         int worker = availableWorkers.front(); 
         availableWorkers.pop_front();
         task->run(worker, tick_number);
         runningTasks.push_back(task);
       }
     }
-  }
+  } while (!runningTasks.empty());
 }
 
