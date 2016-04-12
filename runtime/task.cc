@@ -1,4 +1,5 @@
 #include "task.h"
+#include <sys/time.h>
 #include <omp.h>
 #include <iostream>
 
@@ -57,9 +58,9 @@ Task::checkDone()
 void
 Task::setup()
 {
-  int num_threads = CPU_COUNT(&cpumask_);
+  nthread_ = CPU_COUNT(&cpumask_);
   sched_setaffinity(0, sizeof(cpu_set_t), &cpumask_);
-  omp_set_num_threads(num_threads);
+  omp_set_num_threads(nthread_);
 }
 
 void
@@ -82,26 +83,29 @@ Task::clearListeners(std::list<Task*>& ready)
   listeners_.clear();
 }
 
+double
+Task::getTime() const 
+{
+#if no_timespec
+  struct timeval t;
+  gettimeofday(&t,0);
+  return (t.tv_sec + 1e-6*t.tv_usec);
+#else
+  struct timespec t;
+  clock_gettime(CLOCK_REALTIME, &t);
+  return (t.tv_sec + 1e-9*t.tv_nsec);
+#endif
+  
+}
+
 void
 Task::run(int worker, int start_tick)
 {
   start_tick_ = start_tick;
-  clock_gettime(CLOCK_REALTIME, &start_);
+  start_ = getTime();
   worker_ = worker;
   int rank = worker + 1;
   MPI_Send(this, mySize_, MPI_BYTE, rank, enqueue_tag, MPI_COMM_WORLD);
   MPI_Irecv(&rc_, 1, MPI_INT, rank, done_tag, MPI_COMM_WORLD, &done_request_);
-}
-
-struct timespec
-Task::getTime() const
-{
-  return start_;
-}
-
-int 
-Task::getNumThreads() const
-{
-  return CPU_COUNT(&cpumask_);
 }
 

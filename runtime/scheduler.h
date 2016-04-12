@@ -19,6 +19,10 @@ class Scheduler
  public:
   void run(Task* root);
 
+  void finalize();
+
+  void stop();
+
   virtual void init(int argc, char** argv);
 
   static const int terminate_tag = 42;
@@ -90,6 +94,9 @@ class Scheduler
   }
   */
 
+  double getTime() const;
+
+
   void runWorker();
   void terminateWorkers();
   virtual void runMaster(Task* root) = 0;
@@ -150,7 +157,7 @@ class Buffer : public BufferBase {
 
   Buffer<T>
   offset(int off) const {
-    return Buffer<T> (nelems, mmap_offset + off);
+    return Buffer<T> (nelems, mmap_offset + off*sizeof(T));
   }
 
   const T&

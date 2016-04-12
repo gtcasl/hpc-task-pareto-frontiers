@@ -45,8 +45,10 @@ int run_ddot(int argc, char** argv)
       root = initDag(nelems,a,b,c,d);
     }
     sch->run(root);
+    sch->stop();
   }
   sch->deallocateHeap();
+  sch->finalize();
   return 0;
 }
 

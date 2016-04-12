@@ -16,6 +16,8 @@
 struct cpu_set_t {};
 #define sched_setaffinity(...)
 #define CPU_ZERO(...)
+#define CPU_SET(...)
+#define CPU_COUNT(x)  1
 #endif
 
 
@@ -49,6 +51,11 @@ class Task {
     return &cpumask_;
   }
 
+  int
+  cpuCount() const {
+    return CPU_COUNT(cpumask_);
+  }
+
   int typeID() const { return typeID_; }
 
   void run(int worker, int start_tick);
@@ -73,16 +80,22 @@ class Task {
 
   void clearListeners(std::list<Task*>& ready);
 
-  struct timespec getTime() const;
+  double getStartTime() const {
+    return start_;
+  }
 
   int getStartTick() const { return start_tick_; }
 
-  int getNumThreads() const;
+  int getNumThreads() const {
+    return nthread_;
+  }
   
  protected:
   Task(int mySize, int typeID);
 
  private:
+  double getTime() const;
+
   static const int enqueue_tag = 100;
   static const int done_tag = 101;
   int mySize_;
@@ -103,7 +116,7 @@ class Task {
    * The tasks that require this task to complete before running
    */
   std::set<Task*> listeners_;
-  struct timespec start_;
+  double start_;
   int start_tick_;
 };
 
@@ -199,7 +212,7 @@ class TaskRunner_impl : public TaskRunner
     }
     auto theTask = static_cast<TaskType*>(t);
     theTask->setup();
-    int cores = CPU_COUNT(t->cpuMask());
+    int cores = t->cpuCount();
 #pragma omp parallel
 {
     int threads = omp_get_num_threads();

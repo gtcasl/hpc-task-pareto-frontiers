@@ -24,7 +24,7 @@ endif
 
 ifeq ($(target),darwin)
 LDFLAGS := $(LDFLAGS) -stdlib=libc++
-CPPFLAGS := $(CPPFLAGS) -Dno_affinity
+CPPFLAGS := $(CPPFLAGS) -Dno_affinity -Dno_timespec -Dno_mkl
 endif
 
 ifeq ($(target),intel)

@@ -11,6 +11,7 @@
 #include <fcntl.h> /* For O_* constants */
 #include <fstream>
 #include <iomanip>
+#include <sys/time.h>
 
 #define __GNU_SOURCE
 #include <sched.h>
@@ -114,6 +115,22 @@ Scheduler::run(Task* root)
 }
 
 void
+Scheduler::stop()
+{
+  if (rank_ == 0){
+    terminateWorkers();
+  } else {
+    //do nothing
+  }
+}
+
+void
+Scheduler::finalize()
+{
+  MPI_Finalize();
+}
+
+void
 Scheduler::deallocateHeap()
 {
   munmap(mmap_buffer_, mmap_size_);
@@ -128,19 +145,6 @@ Scheduler::terminateWorkers()
     int dummy = 42;
     MPI_Send(&dummy, 1, MPI_INT, dst, terminate_tag, MPI_COMM_WORLD);
   }
-}
-
-double diff(timespec start, timespec end)
-{
-  timespec temp;
-  if ((end.tv_nsec-start.tv_nsec)<0) {
-    temp.tv_sec = end.tv_sec-start.tv_sec-1;
-    temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-  } else {
-    temp.tv_sec = end.tv_sec-start.tv_sec;
-    temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-  }
-  return temp.tv_sec + (double)temp.tv_nsec / 1000000000.0;
 }
 
 void
@@ -162,13 +166,11 @@ Scheduler::runWorker()
         fprintf(stderr, "No runner registered for type ID %d\n", t->typeID());
         abort();
       }
-      struct timespec start_time;
-      clock_gettime(CLOCK_MONOTONIC, &start_time);
       t->addCpus(1,4);
+      double start = getTime();
       runner->run(t, size);
-      struct timespec end_time;
-      clock_gettime(CLOCK_MONOTONIC, &end_time);
-      double elapsed_seconds = diff(start_time, end_time);
+      double stop = getTime();
+      double elapsed_seconds = stop - start;
 
       // Send elapsed time and num cores to master
       MPI_Request rqst1, rqst2;
@@ -177,6 +179,20 @@ Scheduler::runWorker()
       MPI_Isend(&ncores, 1, MPI_INT, parent, 0, MPI_COMM_WORLD, &rqst2);
     }
   }
+}
+
+double
+Scheduler::getTime() const 
+{
+#ifdef no_timespec
+  struct timeval start_time;
+  gettimeofday(&start_time, NULL);
+  return start_time.tv_sec + 1e-6*start_time.tv_usec;
+#else
+  struct timespec start_time;
+  clock_gettime(CLOCK_MONOTONIC, &start_time);
+  return start_time.tv_sec + 1e-9*start_time.tv_nsec;
+#endif
 }
 
 void
@@ -215,7 +231,7 @@ BasicScheduler::runMaster(Task* root)
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&nthreads, 1, MPI_INT, t->worker() + 1, 0,
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        double start_time = t->getTime().tv_sec + (double)t->getTime().tv_nsec / 1000000000.0;
+        double start_time = t->getStartTime();
         logfile << std::fixed
                 << TaskRunner::get_name(t->typeID()) << "\t"
                 << t->getStartTick() << "\t"

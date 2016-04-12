@@ -1,4 +1,8 @@
+#ifdef no_mkl
+#include <fake_mkl.h>
+#else
 #include <mkl.h>
+#endif
 #include <test.h>
 
 typedef Buffer<double> DoublePtr;
@@ -281,6 +285,7 @@ int cg(int argc, char** argv)
     }
     return -1;
   }
+
   int nx = atoi(argv[2]), ny = atoi(argv[3]), nz = atoi(argv[4]);
   int ncopies = 1;
   int nrows = nx*ny*nz;
@@ -297,6 +302,10 @@ int cg(int argc, char** argv)
   }
 
   int chunkSize = nrows / nchunks;
+  if (nrows % nchunks){
+    std::cerr << "number of chunks does not divide nx*ny*nz - reconfigure" << std::endl;
+    return 1;
+  }
 
   DoubleArray p(nrows);
   DoubleArray x(nrows);
@@ -347,8 +356,10 @@ int cg(int argc, char** argv)
       );
     }
     sch->run(root);
+    sch->stop();
   }
   sch->deallocateHeap();
+  sch->finalize();
 
   return 0;
 }
