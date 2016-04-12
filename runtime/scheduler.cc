@@ -11,12 +11,9 @@
 #include <fcntl.h> /* For O_* constants */
 #include <fstream>
 #include <iomanip>
-<<<<<<< HEAD
 #include <sys/time.h>
-=======
 #include <algorithm>
 #include <cmath>
->>>>>>> 855d2aab4d46e0bfddb7be5e3776f0cd33e2d46f
 
 #define __GNU_SOURCE
 #include <sched.h>

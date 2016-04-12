@@ -59,7 +59,7 @@ class Task {
 
   int
   cpuCount() const {
-    return CPU_COUNT(cpumask_);
+    return CPU_COUNT(&cpumask_);
   }
 
   int typeID() const { return typeID_; }
@@ -92,9 +92,7 @@ class Task {
 
   int getStartTick() const { return start_tick_; }
 
-  int getNumThreads() const {
-    return nthread_;
-  }
+  int getNumThreads() const;
 
   double estimateTime() const;
   

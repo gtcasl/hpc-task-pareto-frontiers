@@ -113,14 +113,6 @@ Task::run(int worker, int start_tick)
   MPI_Irecv(&rc_, 1, MPI_INT, rank, done_tag, MPI_COMM_WORLD, &done_request_);
 }
 
-<<<<<<< HEAD
-=======
-struct timespec
-Task::getTime() const
-{
-  return start_;
-}
-
 int 
 Task::getNumThreads() const
 {
@@ -144,4 +136,3 @@ double Task::estimateTime() const
   return my_time + children_time;
 }
 
->>>>>>> 855d2aab4d46e0bfddb7be5e3776f0cd33e2d46f
