@@ -11,7 +11,12 @@
 #include <fcntl.h> /* For O_* constants */
 #include <fstream>
 #include <iomanip>
+<<<<<<< HEAD
 #include <sys/time.h>
+=======
+#include <algorithm>
+#include <cmath>
+>>>>>>> 855d2aab4d46e0bfddb7be5e3776f0cd33e2d46f
 
 #define __GNU_SOURCE
 #include <sched.h>
@@ -241,27 +246,109 @@ BasicScheduler::runMaster(Task* root)
         availableWorkers.push_front(t->worker());
         runningTasks.erase(tmp);
         t->clearListeners(pendingTasks);
+        num_available_cores_ += nthreads;
       }
     }
 
     bool increment_tick = true;
-    while (!pendingTasks.empty()){
-      if (availableWorkers.empty()){
-        break;
+    if(!pendingTasks.empty()){
+      assert(availableWorkers.size() >= pendingTasks.size() && 
+        "ERROR: Attempting to schedule without enough workers. Use more.");
+
+      std::map<Task*,int> s_star;
+      int sum_s = 0;
+      for(const auto& t : pendingTasks){
+        int minthreads = TaskRunner::get_min_threads(t->typeID());
+        s_star[t] = minthreads;
+        sum_s += minthreads;
+      }
+      if(sum_s > num_available_cores_){
+        std::cout << "Scaling desired threads to those available\n";
+        for(auto& s : s_star){
+          s.second = std::floor((double)num_available_cores_ / sum_s * s.second);
+        }
+      }else{
+        //std::cout << "Enough threads to go around\n";
+      }
+
+      // Shuffle threads around until we minimize makespan
+      std::map<Task*,double> blevels;
+      for(const auto& t : pendingTasks){
+        // Estimate the longest time from this task to completion of the DAG.
+        // estimateTime uses the best possible exec time for each task on longest
+        // path, including this task, so we have to subtract it out and in its
+        // place use the actual predicted execution time for this task with the 
+        // number of cores it has been assigned.
+        double blevel = t->estimateTime() -
+          TaskRunner::get_min_time(t->typeID()) +
+          TaskRunner::get_times(t->typeID())[s_star[t]];
+        blevels[t] = blevel;
+      }
+      while(1){
+        // TODO: What about oscillations? We keep swapping back and for assigning
+        // threads from one task to another, never minimizing the distance and never
+        // running out of threads to assign.
+        Task* min = std::min_element(std::begin(blevels), std::end(blevels),
+                                    [](const std::pair<Task*,double>& a,
+                                       const std::pair<Task*,double>& b){
+                                        return a.second < b.second;
+                                    })->first;
+        Task* max = std::max_element(std::begin(blevels), std::end(blevels),
+                                    [](const std::pair<Task*,double>& a,
+                                       const std::pair<Task*,double>& b){
+                                        return a.second < b.second;
+                                    })->first;
+        if(min == max){
+          break;
+        }
+        if(s_star[min] == 0){
+          break;
+        }
+        double new_bmin = min->estimateTime() -
+          TaskRunner::get_min_time(min->typeID()) +
+          TaskRunner::get_times(min->typeID())[s_star[min]-1];
+        double new_bmax = max->estimateTime() -
+          TaskRunner::get_min_time(max->typeID()) +
+          TaskRunner::get_times(max->typeID())[s_star[max]+1];
+        if(blevels[max] <= new_bmax){
+          break;
+        }
+        --s_star[min];
+        ++s_star[max];
+        blevels[min] = new_bmin;
+        blevels[max] = new_bmax;
+
       }
 
       if(increment_tick){
         ++tick_number;
         increment_tick = false;
       }
-      int worker = availableWorkers.front(); 
-      availableWorkers.pop_front();
-
-      Task* t = pendingTasks.front();
-      pendingTasks.pop_front();
-
-      t->run(worker, tick_number);
-      runningTasks.push_back(t);
+      /*
+       * For each pending task,
+       * if s_star[task] == 0, continue
+       * else
+       * remove task from pendingTasks
+       * assign it s_star[task] threads
+       * pop a worker
+       * run task on worker
+       * add task to runningTasks
+       */
+      auto task_it = std::begin(pendingTasks);
+      while(task_it != std::end(pendingTasks)){
+        Task* task = *task_it;
+        auto removed = task_it++;
+        if(s_star[task] == 0){
+          std::cout << "ZERO" << std::endl;
+          continue;
+        }
+        pendingTasks.erase(removed);
+        // assign s_star[task] threads
+        int worker = availableWorkers.front(); 
+        availableWorkers.pop_front();
+        task->run(worker, tick_number);
+        runningTasks.push_back(task);
+      }
     }
   }
 }

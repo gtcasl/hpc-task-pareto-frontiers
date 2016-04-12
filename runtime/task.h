@@ -11,6 +11,11 @@
 #include <set>
 #include <utility>
 #include <omp.h>
+#include <string>
+#include <sstream>
+#include <fstream>
+#include <vector>
+#include <algorithm>
 
 #ifdef no_affinity
 struct cpu_set_t {};
@@ -20,6 +25,7 @@ struct cpu_set_t {};
 #define CPU_COUNT(x)  1
 #endif
 
+#define NUM_THREADS 228
 
 #define new_task(taskName, ...) \
   make_task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
@@ -89,6 +95,8 @@ class Task {
   int getNumThreads() const {
     return nthread_;
   }
+
+  double estimateTime() const;
   
  protected:
   Task(int mySize, int typeID);
@@ -127,6 +135,30 @@ class TaskRunner {
   static void store(int id, TaskRunner* r, char* name){
     runners_[id] = r;
     names_[id] = name;
+    std::vector<double> times(NUM_THREADS, 0.0);
+    std::string sname = name;
+    sname += ".csv";
+    std::ifstream ifs{sname};
+    if(ifs.good()){
+      std::string line;
+      std::getline(ifs, line); // kill header
+      for(int i = 0; i < NUM_THREADS; ++i){
+        std::getline(ifs, line); 
+        std::stringstream stst{line};
+        std::string elem;
+        std::getline(stst, elem, ','); // nthreads
+        std::getline(stst, elem, ','); // energy
+        std::getline(stst, elem, ','); // time
+        times[i] = std::stod(elem);
+        std::getline(stst, elem, ','); // power
+        std::getline(stst, elem, ','); // speedup
+      }
+    }
+    times_[id] = times;
+    auto min = std::min_element(std::begin(times), std::end(times));
+    min_times_[id] = *min;
+    // if times[0] is fastest, only need 1 thread
+    min_threads_[id] = std::distance(std::begin(times), min) + 1;
   }
 
   static TaskRunner* get(int id){
@@ -137,9 +169,24 @@ class TaskRunner {
     return names_[id];
   }
 
+  static const std::vector<double>& get_times(int id){
+    return times_[id];
+  }
+
+  static double get_min_time(int id){
+    return min_times_[id];
+  }
+
+  static int get_min_threads(int id){
+    return min_threads_[id];
+  }
+
  private:
   static std::map<int, TaskRunner*> runners_;
   static std::map<int, char*> names_;
+  static std::map<int, std::vector<double> > times_;
+  static std::map<int, double> min_times_;
+  static std::map<int, int> min_threads_;
 };
 
 namespace impl {

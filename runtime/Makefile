@@ -12,7 +12,7 @@ MPI :=
 
 CXX :=    $(MPI)mpicxx
 CC :=     $(MPI)mpicc
-CXXFLAGS := -fPIC -O0 -g
+CXXFLAGS := -fPIC -O0 -g -Wall -Wextra
 CPPFLAGS := -I. -std=c++11 -mkl
 LIBDIR :=   
 PREFIX :=   

@@ -2,9 +2,13 @@
 #include <sys/time.h>
 #include <omp.h>
 #include <iostream>
+#include <limits>
 
 std::map<int,TaskRunner*> TaskRunner::runners_;
 std::map<int,char*> TaskRunner::names_;
+std::map<int,std::vector<double> > TaskRunner::times_;
+std::map<int,double> TaskRunner::min_times_;
+std::map<int,int> TaskRunner::min_threads_;;
 
 Task::Task(int mySize, int typeID) :  
   nthread_(0),
@@ -109,3 +113,35 @@ Task::run(int worker, int start_tick)
   MPI_Irecv(&rc_, 1, MPI_INT, rank, done_tag, MPI_COMM_WORLD, &done_request_);
 }
 
+<<<<<<< HEAD
+=======
+struct timespec
+Task::getTime() const
+{
+  return start_;
+}
+
+int 
+Task::getNumThreads() const
+{
+  return CPU_COUNT(&cpumask_);
+}
+
+double Task::estimateTime() const
+{
+  double my_time = TaskRunner::get_min_time(typeID_);
+  double children_time = 0.0;
+  if(!listeners_.empty()){
+    double min_time = std::numeric_limits<double>::infinity();
+    for(const auto& listener : listeners_){
+      double listener_time = listener->estimateTime();
+      if(listener_time < min_time){
+        min_time = listener_time;
+      }
+    }
+    children_time = min_time;
+  }
+  return my_time + children_time;
+}
+
+>>>>>>> 855d2aab4d46e0bfddb7be5e3776f0cd33e2d46f
