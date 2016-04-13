@@ -20,6 +20,7 @@ struct config
 {
   int nchunks;
   int nnz_per_row;
+  int nrows_per_chunk;
   int nrows;
   int ncols;
   int niter;
@@ -199,10 +200,10 @@ initDag(config cfg,
   std::vector<Task*> lastWavefront(cfg.nchunks);
   for (int i=0; i < cfg.nchunks; ++i){
     //have to start by computing Ax
-    Task* compAx  = new_task(spmv, cfg.nrows, AChunks[i], x, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
-    Task* compR0  = new_task(subtract, cfg.nrows, rChunks[i], bChunks[i], ApChunks[i]);
-    Task* compP0  = new_task(copy, cfg.nrows, pChunks[i], rChunks[i]);
-    Task* compRsq = new_task(myddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
+    Task* compAx  = new_task(spmv, cfg.nrows_per_chunk, AChunks[i], x, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
+    Task* compR0  = new_task(subtract, cfg.nrows_per_chunk, rChunks[i], bChunks[i], ApChunks[i]);
+    Task* compP0  = new_task(copy, cfg.nrows_per_chunk, pChunks[i], rChunks[i]);
+    Task* compRsq = new_task(myddot,  cfg.nrows_per_chunk, rChunks[i], rChunks[i], RsqContribs.offset(i));
 
     compAx->dependsOn(root);
     compP0->dependsOn(compR0);
@@ -217,8 +218,8 @@ initDag(config cfg,
   for (int iter=0; iter < cfg.niter; ++iter){
     Task* sum_pAp = new_task(sum_contribs, cfg.nchunks, pApContribs, pAp);
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compAp    = new_task(spmv,  cfg.nrows, AChunks[i], p, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
-      Task* comp_pAp  = new_task(myddot,  cfg.nrows, ApChunks[i], pChunks[i], pApContribs.offset(i));
+      Task* compAp    = new_task(spmv,  cfg.nrows_per_chunk, AChunks[i], p, ApChunks[i], nnzPerRowChunks[i], nonzerosChunks[i]);
+      Task* comp_pAp  = new_task(myddot,  cfg.nrows_per_chunk, ApChunks[i], pChunks[i], pApContribs.offset(i));
       compAp->dependsOn(lastWavefront[i]);
       comp_pAp->dependsOn(compAp);
       sum_pAp->dependsOn(comp_pAp);
@@ -230,9 +231,9 @@ initDag(config cfg,
 
     sumRsq = new_task(sum_contribs, cfg.nchunks, RsqContribs, RsqNextIter);
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compX     = new_task(mydaxpy, cfg.nrows, *alpha, pChunks[i], xChunks[i]);
-      Task* compR     = new_task(mydaxpy, cfg.nrows, -(*alpha), ApChunks[i], rChunks[i]);
-      Task* compRsq   = new_task(myddot,  cfg.nrows, rChunks[i], rChunks[i], RsqContribs.offset(i));
+      Task* compX     = new_task(mydaxpy, cfg.nrows_per_chunk, *alpha, pChunks[i], xChunks[i]);
+      Task* compR     = new_task(mydaxpy, cfg.nrows_per_chunk, -(*alpha), ApChunks[i], rChunks[i]);
+      Task* compRsq   = new_task(myddot,  cfg.nrows_per_chunk, rChunks[i], rChunks[i], RsqContribs.offset(i));
       compX->dependsOn(compAlpha);
       compR->dependsOn(compAlpha);
       compRsq->dependsOn(compR);
@@ -245,7 +246,7 @@ initDag(config cfg,
     setEqual->dependsOn(sumRsq);
 
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compP  = new_task(dxapy, cfg.nrows, *beta, rChunks[i], pChunks[i]);
+      Task* compP  = new_task(dxapy, cfg.nrows_per_chunk, *beta, rChunks[i], pChunks[i]);
       compP->dependsOn(compBeta);
       lastWavefront[i] = compP;
     }
@@ -296,6 +297,7 @@ int cg(int argc, char** argv)
   cfg.nrows = nx*ny*nz;
   cfg.ncols = cfg.nrows;
   cfg.niter = 1;
+  cfg.nrows_per_chunk = nrows / nchunks;
 
   if(sch->rank() == 0){
     cfg.print();

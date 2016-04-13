@@ -5,7 +5,7 @@
 #include <limits>
 
 std::map<int,TaskRunner*> TaskRunner::runners_;
-std::map<int,char*> TaskRunner::names_;
+std::map<int,const char*> TaskRunner::names_;
 std::map<int,std::vector<double> > TaskRunner::times_;
 std::map<int,double> TaskRunner::min_times_;
 std::map<int,int> TaskRunner::min_threads_;;

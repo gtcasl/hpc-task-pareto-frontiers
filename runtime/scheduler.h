@@ -47,6 +47,9 @@ class Scheduler
 
   void*
   relocatePointer(size_t offset){
+    if (offset > 1000000){
+      abort();
+    }
     void* ret = ((char*)mmap_buffer_) + offset;
     return ret;
   }
@@ -137,6 +140,9 @@ class Buffer : public BufferBase {
   Buffer(const Buffer<T>& t)
   {
     mmap_offset = t.mmap_offset;
+    if (mmap_offset > 1000000){
+      abort();
+    }
     nelems = t.nelems;
     buffer = (T*) Scheduler::global->relocatePointer(mmap_offset);
   }
@@ -159,7 +165,9 @@ class Buffer : public BufferBase {
 
   Buffer<T>
   offset(int off) const {
-    return Buffer<T> (nelems, mmap_offset + off*sizeof(T));
+    Buffer<T> newbuf(nelems, mmap_offset + off*sizeof(T));
+    newbuf.buffer = (T*) Scheduler::global->relocatePointer(mmap_offset);
+    return newbuf;
   }
 
   const T&
@@ -169,6 +177,12 @@ class Buffer : public BufferBase {
   }
 
 };
+
+template <class T>
+std::ostream& 
+operator<<(std::ostream& os, const Buffer<T>& buf){
+  os << "Buffer: offset=" << buf.mmap_offset << " ptr=" << (void*) buf.buffer << " nelems=" << buf.nelems;
+}
 
 class BasicScheduler : public Scheduler
 {

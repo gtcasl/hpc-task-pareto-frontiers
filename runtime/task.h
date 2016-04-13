@@ -130,7 +130,7 @@ class TaskRunner {
  public:
   virtual void run(Task* t, int size) = 0;
 
-  static void store(int id, TaskRunner* r, char* name){
+  static void store(int id, TaskRunner* r, const char* name){
     runners_[id] = r;
     names_[id] = name;
     std::vector<double> times(NUM_THREADS, 0.0);
@@ -163,7 +163,7 @@ class TaskRunner {
     return runners_[id];
   }
 
-  static char* get_name(int id){
+  static const char* get_name(int id){
     return names_[id];
   }
 
@@ -181,7 +181,7 @@ class TaskRunner {
 
  private:
   static std::map<int, TaskRunner*> runners_;
-  static std::map<int, char*> names_;
+  static std::map<int, const char*> names_;
   static std::map<int, std::vector<double> > times_;
   static std::map<int, double> min_times_;
   static std::map<int, int> min_threads_;
@@ -285,7 +285,7 @@ class FxnTraits
 
 template <typename myFxnTraits>
 int
-registerFunction(typename myFxnTraits::Fxn f, int id, char* name){
+registerFunction(typename myFxnTraits::Fxn f, int id, const char* name){
   impl::FunctionMap<typename myFxnTraits::Fxn>::store(id, f);
   typedef typename myFxnTraits::Runner myRunner;
   TaskRunner::store(id, new myRunner, name);
