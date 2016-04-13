@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <cmath>
 #include <unordered_set>
+#include <sys/types.h>
+#include <signal.h>
 
 #define __GNU_SOURCE
 #include <sched.h>
@@ -211,6 +213,34 @@ int Scheduler::claimCpu()
   return cpu;
 }
 
+uint32_t Scheduler::readMICPoweruW() const
+{
+  uint32_t power = 0;
+#ifndef no_miclib
+  struct mic_power_util_info* pinfo;
+  if(mic_get_power_utilization_info(mic_device_, &pinfo) != E_MIC_SUCCESS){
+    std::cerr << "Error: Unable to read power utilization info" << std::endl;
+    return power;
+  }
+  if(mic_get_inst_power_readings(pinfo, &power) != E_MIC_SUCCESS){
+    std::cerr << "Error: Unable to read power utilization info" << std::endl;
+  }
+  mic_free_power_utilization_info(pinfo);
+#endif
+  return power;
+}
+
+void Scheduler::overflow(int signum, siginfo_t*, void*){ 
+  if(signum == SIGALRM){
+    auto power_uW = global->readMICPoweruW();
+    global->cumulative_power_ += power_uW;
+    ++global->num_power_samples_;
+    if(power_uW > global->max_power_){
+      global->max_power_ = power_uW;
+    }
+  }
+}
+
 void
 BasicScheduler::runMaster(Task* root)
 {
@@ -228,6 +258,23 @@ BasicScheduler::runMaster(Task* root)
   std::list<Task*> runningTasks;
   std::list<Task*> pendingTasks;
   std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
+
+  // initialize power measurement on this rank
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    std::cerr << "Error: unable to set up signal handler" << std::endl;
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  double start_time = getTime();
 
   int tick_number = 0;
 
@@ -266,8 +313,6 @@ BasicScheduler::runMaster(Task* root)
 
     bool increment_tick = true;
     if(!pendingTasks.empty()){
-      assert(availableWorkers.size() >= pendingTasks.size() && 
-        "ERROR: Attempting to schedule without enough workers. Use more.");
 
       std::map<Task*,int> s_star;
       int sum_s = 0;
@@ -352,6 +397,8 @@ BasicScheduler::runMaster(Task* root)
         if(s_star[task] == 0){
           continue;
         }
+        assert(!availableWorkers.empty() && 
+          "ERROR: Attempting to schedule without enough workers. Use more.");
         pendingTasks.erase(removed);
         // assign s_star[task] threads
         for(int i = 0; i < s_star[task]; ++i){
@@ -368,5 +415,21 @@ BasicScheduler::runMaster(Task* root)
       }
     }
   } while (!runningTasks.empty());
+
+  double end_time = getTime();
+  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  logfile << "\n\nAverage Power(W):\t" << avg_power_W << "\n"
+          << "Max Power(W):\t" << max_power_ / 1000000.0 << "\n"
+          << "Time (s):\t" << end_time - start_time << "\n"
+          ;
 }
 

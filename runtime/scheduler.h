@@ -4,6 +4,10 @@
 #include <vector>
 #include <task.h>
 #include <unordered_set>
+#ifndef no_miclib
+#include <miclib.h>
+#endif
+#include <signal.h>
 
 class BufferBase
 {
@@ -48,9 +52,6 @@ class Scheduler
 
   void*
   relocatePointer(size_t offset){
-    if (offset > 1000000){
-      abort();
-    }
     void* ret = ((char*)mmap_buffer_) + offset;
     return ret;
   }
@@ -65,14 +66,24 @@ class Scheduler
 
   virtual ~Scheduler(){
     global = 0;
+#ifndef no_miclib
+    mic_close_device(mic_device_);
+#endif
   }
+
+  uint32_t readMICPoweruW() const;
+  static void overflow(int signum, siginfo_t*, void*);
+  double getTime() const;
 
  protected:
   Scheduler() :
     mmap_buffer_(0),
     mmap_size_(0),
     total_buffer_size_(0),
-    next_copy_(0)
+    next_copy_(0),
+    cumulative_power_(0),
+    num_power_samples_(0),
+    max_power_(0)
   {
     if (global){
       fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
@@ -82,7 +93,18 @@ class Scheduler
     for(int i = 0; i < NUM_THREADS; ++i){
       available_cores_.insert(i);
     }
+
+    // initialize power measurement
+#ifndef no_miclib
+    if(mic_open_device(&mic_device_, 0) != E_MIC_SUCCESS){
+      std::cerr << "Error: Unable to open MIC" << std::endl;
+      abort();
+    }
+#endif
   }
+  long long cumulative_power_;
+  long num_power_samples_;
+  uint32_t max_power_;
 
  private:
   void addNeededBuffer(BufferBase* buf, size_t size);
@@ -110,9 +132,6 @@ class Scheduler
   }
   */
 
-  double getTime() const;
-
-
   void runWorker();
   void terminateWorkers();
   virtual void runMaster(Task* root) = 0;
@@ -131,6 +150,10 @@ class Scheduler
   int nproc_;
 
   std::unordered_set<int> available_cores_;
+
+#ifndef no_miclib
+  struct mic_device* mic_device_;
+#endif
 };
 
 template <class T>
@@ -153,9 +176,6 @@ class Buffer : public BufferBase {
   Buffer(const Buffer<T>& t)
   {
     mmap_offset = t.mmap_offset;
-    if (mmap_offset > 1000000){
-      abort();
-    }
     nelems = t.nelems;
     buffer = (T*) Scheduler::global->relocatePointer(mmap_offset);
   }
