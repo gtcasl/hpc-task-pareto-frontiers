@@ -1,0 +1,35 @@
+TARGET := run
+SRC := $(shell ls *.cc) $(shell ls cg/*.cc)
+HEADERS := $(shell ls *.h)
+
+CXX :=    mpiicpc
+CXXFLAGS := -fPIC -O0 -g -Wall -Wextra -mkl
+CPPFLAGS := -I. -std=c++11
+LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
+
+OBJ := $(SRC:.cc=.o) 
+MICOBJ := $(SRC:.cc=.mic.o) 
+
+.PHONY: clean install 
+
+TARGETS := $(TARGET).host $(TARGET).mic
+all: $(TARGETS)
+
+$(TARGET).host: $(OBJ) 
+	$(CXX) -o $@ $+ $(CXXFLAGS) $(LDFLAGS) $(LIBS) -lmkl_rt -lmicmgmt
+
+$(TARGET).mic: $(MICOBJ) 
+	$(CXX) -o $@ $+ $(CXXFLAGS) -mmic $(LDFLAGS) -L$(MKLROOT)/lib/mic $(LIBS) -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core 
+
+%.mic.o: %.cc  $(HEADERS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@ -mmic -openmp -Dno_miclib
+
+%.o: %.cc  $(HEADERS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@ -openmp
+
+clean: 
+	rm -f $(TARGET) $(OBJ) $(MICOBJ)
+
+install: $(TARGET)
+	cp $< $(PREFIX)/bin
+
