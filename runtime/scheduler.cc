@@ -23,6 +23,8 @@
 
 #define error(...) fprintf(stderr, __VA_ARGS__)
 
+#define DEFAULT_NUM_THREADS 228
+
 char taskBuffer[1024];
 
 Scheduler* Scheduler::global = 0;
@@ -35,6 +37,15 @@ Scheduler::init(int argc, char** argv)
   MPI_Comm_size(MPI_COMM_WORLD, &nproc_);
   //assert(nproc_ > 1);
   nworkers_ = nproc_ - 1;
+
+  int num_threads = DEFAULT_NUM_THREADS;
+  auto threads_env = getenv("NUMTHREADS");
+  if(threads_env != NULL){
+    num_threads = std::atoi(threads_env);
+  }
+  for(int i = 0; i < num_threads; ++i){
+    available_cores_.insert(i);
+  }
 }
 
 static const char* mmap_fname = "mmap_heap";
@@ -266,6 +277,8 @@ BasicScheduler::runMaster(Task* root)
    * ie, out of power, out of cores, could use more cores, etc
    */
   Logger logger{"scheduler.log"};
+  logger.log("message", "setting number of threads",
+             "nthreads", numAvailableCores());
 
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0

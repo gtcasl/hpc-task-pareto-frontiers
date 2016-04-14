@@ -90,10 +90,6 @@ class Scheduler
       abort();
     }
     global = this;
-    for(int i = 0; i < NUM_THREADS; ++i){
-      available_cores_.insert(i);
-    }
-
     // initialize power measurement
 #ifndef no_miclib
     if(mic_open_device(&mic_device_, 0) != E_MIC_SUCCESS){

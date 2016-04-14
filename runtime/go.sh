@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Note: to set the maximum usable threads, set environment variable 'NUMTHREADS'
+
 if [[ $1 -le 1 ]]; then
     echo "Error: Must launch more than one process"
     exit 1
