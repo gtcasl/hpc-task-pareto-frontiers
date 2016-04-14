@@ -277,7 +277,7 @@ BasicScheduler::runMaster(Task* root)
    * ie, out of power, out of cores, could use more cores, etc
    */
   Logger logger{"scheduler.log"};
-  logger.log("message", "setting number of threads",
+  logger.log("message", "setting maximum number of threads",
              "nthreads", numAvailableCores());
 
   std::list<int> availableWorkers;
@@ -373,37 +373,53 @@ BasicScheduler::runMaster(Task* root)
           TaskRunner::get_times(t->typeID())[s_star[t]];
         blevels[t] = blevel;
       }
+      Task* min = std::min_element(std::begin(blevels), std::end(blevels),
+                                  [](const std::pair<Task*,double>& a,
+                                     const std::pair<Task*,double>& b){
+                                      return a.second < b.second;
+                                  })->first;
+      Task* max = std::max_element(std::begin(blevels), std::end(blevels),
+                                  [](const std::pair<Task*,double>& a,
+                                     const std::pair<Task*,double>& b){
+                                      return a.second < b.second;
+                                  })->first;
+      double min_bmax = blevels[max];
       while(1){
-        Task* min = std::min_element(std::begin(blevels), std::end(blevels),
-                                    [](const std::pair<Task*,double>& a,
-                                       const std::pair<Task*,double>& b){
-                                        return a.second < b.second;
-                                    })->first;
-        Task* max = std::max_element(std::begin(blevels), std::end(blevels),
-                                    [](const std::pair<Task*,double>& a,
-                                       const std::pair<Task*,double>& b){
-                                        return a.second < b.second;
-                                    })->first;
         if(min == max){
           break;
         }
         if(s_star[min] == 0){
           break;
         }
-        double new_bmin = min->estimateTime() -
-          TaskRunner::get_min_time(min->typeID()) +
-          TaskRunner::get_times(min->typeID())[s_star[min]-1];
-        double new_bmax = max->estimateTime() -
-          TaskRunner::get_min_time(max->typeID()) +
-          TaskRunner::get_times(max->typeID())[s_star[max]+1];
-        if(blevels[max] <= new_bmax){
-          break;
-        }
         --s_star[min];
         ++s_star[max];
-        blevels[min] = new_bmin;
-        blevels[max] = new_bmax;
+        blevels[min] = min->estimateTime() -
+          TaskRunner::get_min_time(min->typeID()) +
+          TaskRunner::get_times(min->typeID())[s_star[min]];
+        blevels[max] = max->estimateTime() -
+          TaskRunner::get_min_time(max->typeID()) +
+          TaskRunner::get_times(max->typeID())[s_star[max]];
+        Task* new_min = std::min_element(std::begin(blevels), std::end(blevels),
+                                         [](const std::pair<Task*,double>& a,
+                                            const std::pair<Task*,double>& b){
+                                             return a.second < b.second;
+                                         })->first;
+        Task* new_max = std::max_element(std::begin(blevels), std::end(blevels),
+                                         [](const std::pair<Task*,double>& a,
+                                            const std::pair<Task*,double>& b){
+                                             return a.second < b.second;
+                                         })->first;
+        // new config is not an improvement
+        if(blevels[new_max] >= min_bmax){
+          ++s_star[min];
+          --s_star[max];
+          break;
+        }
 
+        // replace min/max/min_bmax
+        min = new_min;
+        max = new_max;
+        min_bmax = blevels[max];
       }
 
       if(increment_tick){
