@@ -241,14 +241,31 @@ void Scheduler::overflow(int signum, siginfo_t*, void*){
   }
 }
 
+class Logger{
+    std::ofstream logfile_;
+  public:
+    Logger(const char* fname) : logfile_{fname} {
+      logfile_ << std::fixed;
+    }
+    
+    void log(){
+      logfile_ << "\n";
+    }
+
+    template<class T, class U, class... Ts>
+    void log(const T& t, const U& u, const Ts&... args){
+      logfile_ << t << "=" << u << ",";
+      log(args...);
+    }
+};
+
 void
 BasicScheduler::runMaster(Task* root)
 {
   /* TODO: Add logging to document when decisions are made,
    * ie, out of power, out of cores, could use more cores, etc
    */
-  std::ofstream logfile{"scheduler.log"};
-  logfile << "task\ttick\tstart\telapsed\tthreads\n";
+  Logger logger{"scheduler.log"};
 
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0
@@ -264,7 +281,7 @@ BasicScheduler::runMaster(Task* root)
   sa.sa_sigaction = overflow;
   sa.sa_flags = SA_SIGINFO;
   if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    std::cerr << "Error: unable to set up signal handler" << std::endl;
+    logger.log("error", "Unable to set up signal handler");
     abort();
   }
   struct itimerval work_time;
@@ -295,12 +312,12 @@ BasicScheduler::runMaster(Task* root)
         MPI_Recv(&nthreads, 1, MPI_INT, t->worker() + 1, 0,
                  MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         double start_time = t->getStartTime();
-        logfile << std::fixed
-                << TaskRunner::get_name(t->typeID()) << "\t"
-                << t->getStartTick() << "\t"
-                << start_time << "\t"
-                << elapsed_seconds << "\t"
-                << nthreads << "\n";
+        logger.log("end_task", "",
+                   "name", TaskRunner::get_name(t->typeID()),
+                   "start_time", start_time,
+                   "elapsed_seconds", elapsed_seconds,
+                   "nthreads", nthreads,
+                   "released_listeners", t->getNumListeners());
         availableWorkers.push_front(t->worker());
         runningTasks.erase(tmp);
         t->clearListeners(pendingTasks);
@@ -322,12 +339,12 @@ BasicScheduler::runMaster(Task* root)
         sum_s += minthreads;
       }
       if(sum_s > numAvailableCores()){
-        std::cout << "Scaling desired threads to those available\n";
+        logger.log("message", "Scaling desired threads to those available");
         for(auto& s : s_star){
           s.second = std::floor((double)numAvailableCores() / sum_s * s.second);
         }
       }else{
-        //std::cout << "Enough threads to go around\n";
+        logger.log("message", "Enough threads to go around");
       }
 
       // Shuffle threads around until we minimize makespan
@@ -408,6 +425,11 @@ BasicScheduler::runMaster(Task* root)
           task->addCpu(cpu);
           taskCpuAssignments[task].insert(cpu);
         }
+        logger.log("start_task", "",
+                   "name", TaskRunner::get_name(task->typeID()),
+                   "tick", tick_number,
+                   "start_time", getTime(),
+                   "nthreads", s_star[task]);
         int worker = availableWorkers.front(); 
         availableWorkers.pop_front();
         task->run(worker, tick_number);
@@ -427,9 +449,8 @@ BasicScheduler::runMaster(Task* root)
   work_time.it_value.tv_usec = 0;
   setitimer(ITIMER_REAL, &work_time, NULL);
 
-  logfile << "\n\nAverage Power(W):\t" << avg_power_W << "\n"
-          << "Max Power(W):\t" << max_power_ / 1000000.0 << "\n"
-          << "Time (s):\t" << end_time - start_time << "\n"
-          ;
+  logger.log("average_power_W", avg_power_W);
+  logger.log("max_power_W", max_power_ / 1000000.0);
+  logger.log("time_s", end_time - start_time);
 }
 

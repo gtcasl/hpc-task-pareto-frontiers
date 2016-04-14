@@ -95,6 +95,8 @@ class Task {
   int getNumThreads() const;
 
   double estimateTime() const;
+
+  int getNumListeners() const { return listeners_.size(); }
   
  protected:
   Task(int mySize, int typeID);
