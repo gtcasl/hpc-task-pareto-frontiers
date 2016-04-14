@@ -335,7 +335,7 @@ int cg(int argc, char** argv)
 
   sch->allocateHeap(ncopies);
 
-  for (int i=0; i < ncopies; ++i, sch->nextIter()){
+  for (int iters=0; iters < ncopies; ++iters, sch->nextIter()){
     for (int i=0; i < nchunks; ++i){
       pChunks[i] = p.offset(i*chunkSize);
       xChunks[i] = x.offset(i*chunkSize);
@@ -344,7 +344,6 @@ int cg(int argc, char** argv)
     }
     generate_problem_27pt(nx,ny,nz,chunkSize,A,nonzeros,nnzPerRow,bChunks,xChunks,AChunks,nonzerosChunks);
   }
-
 
   for (int i=0; i < ncopies; ++i, sch->nextIter()){
     Task* root = 0;
