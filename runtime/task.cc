@@ -9,6 +9,19 @@ std::map<int,const char*> TaskRunner::names_;
 std::map<int,std::vector<double> > TaskRunner::times_;
 std::map<int,double> TaskRunner::min_times_;
 std::map<int,int> TaskRunner::min_threads_;;
+std::map<int,std::vector<double> > TaskRunner::powers_;
+
+int TaskRunner::get_next_least_powerful_num_threads(int id,
+                                                    int cur_num_threads) {
+  double cur_power = powers_[id][cur_num_threads - 1];
+  int new_num_threads = cur_num_threads;
+  for(; new_num_threads > 0; --new_num_threads){
+    if(powers_[id][new_num_threads - 1] < cur_power){
+      return new_num_threads;
+    }
+  }
+  return 0;
+}
 
 Task::Task(int mySize, int typeID) :  
   nthread_(0),

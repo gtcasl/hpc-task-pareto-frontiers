@@ -43,6 +43,11 @@ Scheduler::init(int argc, char** argv)
   if(threads_env != NULL){
     num_threads = std::atoi(threads_env);
   }
+  auto power_limit_env = getenv("POWERLIMIT");
+  if(power_limit_env != NULL){
+    power_limit_ = std::atoi(power_limit_env);
+    available_power_ = power_limit_;
+  }
   for(int i = 0; i < num_threads; ++i){
     available_cores_.insert(i);
   }
@@ -337,6 +342,7 @@ BasicScheduler::runMaster(Task* root)
         for(const auto& cpu : taskCpuAssignments[t]){
           returnCpu(cpu);
         }
+        available_power_ += TaskRunner::get_powers(t->typeID())[nthreads - 1];
         taskCpuAssignments[t].clear();
       }
     }
@@ -344,16 +350,16 @@ BasicScheduler::runMaster(Task* root)
     bool increment_tick = true;
     if(!pendingTasks.empty()){
 
-      std::map<Task*,int> s_star;
+      std::map<Task*,int> task_thread_assignments;
       int sum_s = 0;
       for(const auto& t : pendingTasks){
         int minthreads = TaskRunner::get_min_threads(t->typeID());
-        s_star[t] = minthreads;
+        task_thread_assignments[t] = minthreads;
         sum_s += minthreads;
       }
       if(sum_s > numAvailableCores()){
         logger.log("message", "Scaling desired threads to those available");
-        for(auto& s : s_star){
+        for(auto& s : task_thread_assignments){
           s.second = std::floor((double)numAvailableCores() / sum_s * s.second);
         }
       }else{
@@ -361,66 +367,126 @@ BasicScheduler::runMaster(Task* root)
       }
 
       // Shuffle threads around until we minimize makespan
-      std::map<Task*,double> blevels;
+      std::map<Task*,double> est_makespans;
       for(const auto& t : pendingTasks){
         // Estimate the longest time from this task to completion of the DAG.
         // estimateTime uses the best possible exec time for each task on longest
         // path, including this task, so we have to subtract it out and in its
         // place use the actual predicted execution time for this task with the 
         // number of cores it has been assigned.
-        double blevel = t->estimateTime() -
-          TaskRunner::get_min_time(t->typeID()) +
-          TaskRunner::get_times(t->typeID())[s_star[t]];
-        blevels[t] = blevel;
+        double est_makespan = std::numeric_limits<double>::infinity();
+        if(task_thread_assignments[t] != 0){
+          est_makespan = t->estimateTime() -
+            TaskRunner::get_min_time(t->typeID()) +
+            TaskRunner::get_times(t->typeID())[task_thread_assignments[t] - 1];
+        }
+        est_makespans[t] = est_makespan;
       }
-      Task* min = std::min_element(std::begin(blevels), std::end(blevels),
-                                  [](const std::pair<Task*,double>& a,
-                                     const std::pair<Task*,double>& b){
-                                      return a.second < b.second;
-                                  })->first;
-      Task* max = std::max_element(std::begin(blevels), std::end(blevels),
-                                  [](const std::pair<Task*,double>& a,
-                                     const std::pair<Task*,double>& b){
-                                      return a.second < b.second;
-                                  })->first;
-      double min_bmax = blevels[max];
+      Task* min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
+                                   [](const std::pair<Task*,double>& a,
+                                      const std::pair<Task*,double>& b){
+                                   return a.second < b.second;
+                                   })->first;
+      Task* max = std::max_element(std::begin(est_makespans), std::end(est_makespans),
+                                   [](const std::pair<Task*,double>& a,
+                                      const std::pair<Task*,double>& b){
+                                   return a.second < b.second;
+                                   })->first;
+      double min_makespan = est_makespans[max];
       while(1){
         if(min == max){
           break;
         }
-        if(s_star[min] == 0){
+        if(task_thread_assignments[min] == 0){
           break;
         }
-        --s_star[min];
-        ++s_star[max];
-        blevels[min] = min->estimateTime() -
-          TaskRunner::get_min_time(min->typeID()) +
-          TaskRunner::get_times(min->typeID())[s_star[min]];
-        blevels[max] = max->estimateTime() -
-          TaskRunner::get_min_time(max->typeID()) +
-          TaskRunner::get_times(max->typeID())[s_star[max]];
-        Task* new_min = std::min_element(std::begin(blevels), std::end(blevels),
+        --task_thread_assignments[min];
+        ++task_thread_assignments[max];
+        est_makespans[min] = std::numeric_limits<double>::infinity();
+        est_makespans[max] = std::numeric_limits<double>::infinity();
+        if(task_thread_assignments[min] != 0){
+          est_makespans[min] = min->estimateTime() -
+            TaskRunner::get_min_time(min->typeID()) +
+            TaskRunner::get_times(min->typeID())[task_thread_assignments[min] - 1];
+        }
+        if(task_thread_assignments[max] != 0){
+          est_makespans[max] = max->estimateTime() -
+            TaskRunner::get_min_time(max->typeID()) +
+            TaskRunner::get_times(max->typeID())[task_thread_assignments[max] - 1];
+        }
+        Task* new_min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
                                          [](const std::pair<Task*,double>& a,
                                             const std::pair<Task*,double>& b){
                                              return a.second < b.second;
                                          })->first;
-        Task* new_max = std::max_element(std::begin(blevels), std::end(blevels),
+        Task* new_max = std::max_element(std::begin(est_makespans), std::end(est_makespans),
                                          [](const std::pair<Task*,double>& a,
                                             const std::pair<Task*,double>& b){
                                              return a.second < b.second;
                                          })->first;
         // new config is not an improvement
-        if(blevels[new_max] >= min_bmax){
-          ++s_star[min];
-          --s_star[max];
+        if(est_makespans[new_max] >= min_makespan){
+          ++task_thread_assignments[min];
+          --task_thread_assignments[max];
           break;
         }
 
-        // replace min/max/min_bmax
+        // replace min/max/min_makespan
         min = new_min;
         max = new_max;
-        min_bmax = blevels[max];
+        min_makespan = est_makespans[max];
       }
+
+      int sum_p = 0;
+      for(const auto& t : pendingTasks){
+        if(task_thread_assignments[t] != 0){
+          sum_p += TaskRunner::get_powers(t->typeID())[task_thread_assignments[t] - 1];
+        }
+      }
+      if(sum_p > available_power_){
+        logger.log("message", "Need to reduce workload to fit within power budget",
+                   "available", available_power_,
+                   "sum_p", sum_p);
+        while(sum_p > available_power_){
+          // the loser is the task that slows the least with a delta in power
+          // losing task: Task*, #threads, delta t, delta p
+          // time goes up, power goes down
+          Task* losing_task;
+          int new_threads;
+          double delta_t{0.0};
+          double delta_p;
+          for(const auto& t : pendingTasks){
+            int old_t = task_thread_assignments[t];
+            int new_t = TaskRunner::get_next_least_powerful_num_threads(t->typeID(),
+                                                                        old_t);
+            double old_time = TaskRunner::get_times(t->typeID())[old_t - 1];
+            double new_time = TaskRunner::get_times(t->typeID())[new_t - 1];
+            if(new_time - old_time < delta_t){
+              double old_p = TaskRunner::get_powers(t->typeID())[old_t - 1];
+              double new_p = TaskRunner::get_powers(t->typeID())[new_t - 1];
+              losing_task = t;
+              new_threads = new_t;
+              delta_t = new_time - old_time;
+              delta_p = new_p - old_p;
+            }
+          }
+          assert((new_threads == 0 ||
+                 new_threads < task_thread_assignments[losing_task]) &&
+                 "Error: by lowering the power we're increasing the number of threads. Uh oh.");
+          logger.log("message", "Lowering power",
+                     "name", TaskRunner::get_name(losing_task->typeID()),
+                     "old_threads", task_thread_assignments[losing_task],
+                     "new_threads", new_threads,
+                     "delta_t", delta_t,
+                     "delta_p", delta_p);
+          task_thread_assignments[losing_task] = new_threads;
+          sum_p += delta_p;
+        }
+      } else {
+        logger.log("message", "Enough power to go around");
+      }
+
+      available_power_ -= sum_p;
 
       if(increment_tick){
         ++tick_number;
@@ -428,10 +494,10 @@ BasicScheduler::runMaster(Task* root)
       }
       /*
        * For each pending task,
-       * if s_star[task] == 0, continue
+       * if task_thread_assignments[task] == 0, continue
        * else
        * remove task from pendingTasks
-       * assign it s_star[task] threads
+       * assign it task_thread_assignments[task] threads
        * pop a worker
        * run task on worker
        * add task to runningTasks
@@ -440,14 +506,17 @@ BasicScheduler::runMaster(Task* root)
       while(task_it != std::end(pendingTasks)){
         Task* task = *task_it;
         auto removed = task_it++;
-        if(s_star[task] == 0){
+        if(task_thread_assignments[task] == 0){
+          logger.log("message", "Attempting to schedule task with zero threads",
+                     "task", TaskRunner::get_name(task->typeID()),
+                     "tick", tick_number);
           continue;
         }
         assert(!availableWorkers.empty() && 
           "ERROR: Attempting to schedule without enough workers. Use more.");
         pendingTasks.erase(removed);
-        // assign s_star[task] threads
-        for(int i = 0; i < s_star[task]; ++i){
+        // assign task_thread_assignments[task] threads
+        for(int i = 0; i < task_thread_assignments[task]; ++i){
           // get an available cpu
           int cpu = claimCpu();
           // add it to the task
@@ -458,7 +527,7 @@ BasicScheduler::runMaster(Task* root)
                    "name", TaskRunner::get_name(task->typeID()),
                    "tick", tick_number,
                    "start_time", getTime(),
-                   "nthreads", s_star[task]);
+                   "nthreads", task_thread_assignments[task]);
         int worker = availableWorkers.front(); 
         availableWorkers.pop_front();
         task->run(worker, tick_number);

@@ -136,6 +136,7 @@ class TaskRunner {
     runners_[id] = r;
     names_[id] = name;
     std::vector<double> times(NUM_THREADS, 0.0);
+    std::vector<double> powers(NUM_THREADS, 0.0);
     std::string sname = name;
     sname += ".csv";
     std::ifstream ifs{sname};
@@ -151,10 +152,12 @@ class TaskRunner {
         std::getline(stst, elem, ','); // time
         times[i] = std::stod(elem);
         std::getline(stst, elem, ','); // power
+        powers[i] = std::stod(elem);
         std::getline(stst, elem, ','); // speedup
       }
     }
     times_[id] = times;
+    powers_[id] = powers;
     auto min = std::min_element(std::begin(times), std::end(times));
     min_times_[id] = *min;
     // if times[0] is fastest, only need 1 thread
@@ -173,6 +176,10 @@ class TaskRunner {
     return times_[id];
   }
 
+  static const std::vector<double>& get_powers(int id){
+    return powers_[id];
+  }
+
   static double get_min_time(int id){
     return min_times_[id];
   }
@@ -181,12 +188,15 @@ class TaskRunner {
     return min_threads_[id];
   }
 
+  static int get_next_least_powerful_num_threads(int id, int cur_num_threads);
+
  private:
   static std::map<int, TaskRunner*> runners_;
   static std::map<int, const char*> names_;
   static std::map<int, std::vector<double> > times_;
   static std::map<int, double> min_times_;
   static std::map<int, int> min_threads_;
+  static std::map<int, std::vector<double> > powers_;
 };
 
 namespace impl {

@@ -83,7 +83,9 @@ class Scheduler
     next_copy_(0),
     cumulative_power_(0),
     num_power_samples_(0),
-    max_power_(0)
+    max_power_(0),
+    power_limit_(350),
+    available_power_(power_limit_)
   {
     if (global){
       fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
@@ -101,6 +103,8 @@ class Scheduler
   long long cumulative_power_;
   long num_power_samples_;
   uint32_t max_power_;
+  uint32_t power_limit_; // I think the default of 350 is way above the TDP
+  uint32_t available_power_; // amount of power that can be used at the moment
 
  private:
   void addNeededBuffer(BufferBase* buf, size_t size);
