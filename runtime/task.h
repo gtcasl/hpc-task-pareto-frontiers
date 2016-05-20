@@ -32,6 +32,13 @@ struct cpu_set_t {};
 #define new_task(taskName, ...) \
   make_task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
 
+
+#ifdef DEP_DEBUG
+#define dep_debug(...) printf(__VA_ARGS__)
+#else
+#define dep_debug(...) 
+#endif
+
 class Task {
  public:
   void setCPUState(int s){
@@ -76,13 +83,21 @@ class Task {
     return worker_;
   }
 
+  // you are allowed to pass a null task for 
+  // algorithmic simplicity - it just gets ignored
   void dependsOn(Task* t, int bytes = 0){
-    preconditions_[t] += bytes;
-    t->listeners_.insert(this);
+    if (t){
+      preconditions_[t] += bytes;
+      t->listeners_.insert(this);
+      dep_debug("Adding dependency %p for task %p - join counter = %d\n",
+        t, this, preconditions_.size());
+    }
   }
 
   int clearDependency(Task* t){
     preconditions_.erase(t);
+    dep_debug("Clearing dependency %p for task %p - join counter = %d\n",
+      t, this, preconditions_.size());
     return preconditions_.size();
   }
 

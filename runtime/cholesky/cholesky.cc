@@ -1,5 +1,11 @@
 #include <test.h>
 
+#if CHOLESKY_DEBUG
+#define task_debug(...) printf(__VA_ARGS__)
+#else
+#define task_debug(...) 
+#endif
+
 static enum fxn_id {
   potrf_id,
   gemm_id,
@@ -34,8 +40,9 @@ typedef Buffer<IntArray> IntChunkArray;
 typedef Buffer<DoubleArray> DoubleChunkArray;
 
 void
-trsm(int size, DoubleArray A, DoubleArray B)
+trsm(int k, int m, int size, DoubleArray A, DoubleArray B)
 {
+  task_debug("Solving TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
   //solve AX = B
   //B overwrriten with X
   char side = 'R';
@@ -50,8 +57,9 @@ trsm(int size, DoubleArray A, DoubleArray B)
 }
 
 void
-potrf(int size, DoubleArray A)
+potrf(int k, int size, DoubleArray A)
 {
+  task_debug("Running POTRF A(%d,%d)\n", k, k);
   char uplo = 'U';
   int info;
   dpotrf(&uplo, &size, A, &size, &info);
@@ -70,6 +78,7 @@ potrf(int size, DoubleArray A)
 
 void
 syrk(
+  int k, int n,
   int size,
   bool trans,
   double alpha, 
@@ -77,6 +86,7 @@ syrk(
   DoubleArray C,
   DoubleArray A)
 {
+  task_debug("Adding  SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, k, n);
   char ta = trans ? 'N' : 'T';
   char uplo = 'U';
   dsyrk(&uplo, &ta, &size, &size, 
@@ -94,7 +104,9 @@ syrk(
 }
 
 void
-gemm(int size,
+gemm(
+  int m, int n, int k,
+  int size,
   bool ltrans, 
   bool rtrans,
   double alpha,
@@ -102,6 +114,8 @@ gemm(int size,
   DoubleArray product, 
   DoubleArray left, 
   DoubleArray right){
+  task_debug("Adding  GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
+    m, n, m, k, k, n);
   char lt = ltrans ? 'N' : 'T'; //GD fortran
   char rt = rtrans ? 'N' : 'T'; //GD fortran
   dgemm(&lt, &rt, &size, &size, &size,
@@ -170,12 +184,12 @@ class Matrix
         if (jBlock != lastColBlock){
           int offset = (iBlock*blockGridSize_+jBlock)*blockStorageSize + (iOffset*blockSize_ + jOffset);
           //printf("Hopping to block %d,%d at offset %d\n", iBlock, jBlock, offset);
-          printf("    ");
+          printf("   ");
           ptr = storage_.offset(offset);
           lastColBlock = jBlock;
         }
         //printf("Pointer %p is %f\n", ptr, *ptr);
-        printf("%10.6f", *ptr);
+        printf("%6.2f", *ptr);
       }
       printf("\n");
     }
@@ -203,49 +217,80 @@ class Matrix
   DoubleArray storage_;
 };
 
+class TaskMap {
+ public:
+  TaskMap(int size) : size_(size), tasks_(size*size, NULL){}
+  
+  Task*& operator()(int i, int j){
+    int offset = i*size_ + j;
+    return tasks_[offset];
+  }
+ private:
+  std::vector<Task*> tasks_;
+  int size_;
+};
+
 Task*
 initDag(Matrix& A)
 {
   Task* root = 0;
-  Task* prev = 0;
 
   int nBlocks = A.blockGridSize();
   int blockSize = A.blockSize();
+
+  TaskMap pots(nBlocks);
+  TaskMap syrs(nBlocks);
+  TaskMap trs(nBlocks);
+  TaskMap gemms(nBlocks);
    
   for (int k=0; k < nBlocks; ++k){
     DoubleArray Akk = A.block(k,k);
-    Task* diag = new_task(potrf, blockSize, Akk);
+    Task* diag = new_task(potrf, k, blockSize, Akk);
+    dep_debug("POTRF (%d,%d) = %p\n", k,k,diag);
+    pots(k,k) = diag;
     if (k == 0){
       root = diag;
     } else {
-      diag->dependsOn(prev);
+      //the potrf will only directly depend on the most recent syrk
+      diag->dependsOn(syrs(k,k));
     }
-    prev = diag;
     for (int m=k+1; m < nBlocks; ++m){
       DoubleArray Amk = A.block(m,k);
-      Task* solve = new_task(trsm, blockSize, Akk, Amk);
-      solve->dependsOn(prev);
-      prev = solve;
+      Task* solve = new_task(trsm, k, m, blockSize, Akk, Amk);
+      dep_debug(" TRSM (%d,%d) = %p\n", m, k, solve);
+      trs(m,k) = solve;
+      solve->dependsOn(pots(k,k));
+      if (m >= 2){
+        solve->dependsOn(gemms(m,k));
+      }
     }
     for (int n=k+1; n < nBlocks; ++n){
       DoubleArray Ann = A.block(n,n);
       DoubleArray Ank = A.block(n,k);
       //Amm -= Amk * Amk^T
       //Ank ends up transposed from the DTRSM solve
-      Task* symmUpd = new_task(syrk, blockSize, true, -1.0, 1.0, Ann, Ank);
-      symmUpd->dependsOn(prev);
-      prev = symmUpd;
+      Task* symmUpd = new_task(syrk, k, n, blockSize, true, -1.0, 1.0, Ann, Ank);
+      dep_debug(" SYRK (%d,%d) = %p\n", n,n,symmUpd);
+      symmUpd->dependsOn(trs(n,k));
+      symmUpd->dependsOn(syrs(n,n)); //depend on prev syrk here
+      syrs(n,n) = symmUpd;
       for (int m=n+1; m < nBlocks; ++m){
         DoubleArray Amk = A.block(m,k);
         DoubleArray Amn = A.block(m,n);
         //because of how awesome BLAS is, Ank is transposed backwards
-        Task* mult = new_task(gemm, blockSize, true, false, -1.0, 1.0, Amn, Amk, Ank);
-        mult->dependsOn(prev);
-        prev = mult;
+        Task* mult = new_task(gemm, m, n, k, blockSize, true, false, -1.0, 1.0, Amn, Amk, Ank);
+        dep_debug(" GEMM (%d,%d) = %p\n", m,n,mult);
+        gemms(m,n) = mult;
+        mult->dependsOn(trs(m,k));
+        mult->dependsOn(trs(n,k));
       }
     }
   }
   return root;
+}
+
+void fill(int nBlocks, int blockSize, Matrix& L, Matrix& A)
+{
 }
 
 
@@ -255,51 +300,80 @@ int cholesky(int argc, char** argv)
   Scheduler* sch = new BasicScheduler;
   sch->init(argc, argv);
 
-  RegisterTask(potrf, void, int, DoubleArray);
-  RegisterTask(trsm, void, int, DoubleArray, DoubleArray);
-  RegisterTask(syrk, void, int, bool, double, double, DoubleArray, DoubleArray);
-  RegisterTask(gemm, void, int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
+  RegisterTask(potrf, void, int,
+    int, DoubleArray);
+  RegisterTask(trsm,  void, int, int,
+    int, DoubleArray, DoubleArray);
+  RegisterTask(syrk,  void, int, int, 
+    int, bool, double, double, DoubleArray, DoubleArray);
+  RegisterTask(gemm,  void, int, int, int,
+    int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
 
-  int nBlocks = 3;
-  int blockSize = 3;
+  int nBlocks = 4;
+  int blockSize = 4;
   Matrix A(nBlocks, blockSize);
   Matrix L(nBlocks, blockSize);
 
-  int ncopies = 1;
+  int ncopies = 2;
   sch->allocateHeap(ncopies);
 
-  if (sch->rank() == 0){
+  for (int c=0; c < ncopies; ++c, sch->nextIter()){
+    if (sch->rank() != 0) break;
+
     for (int i=0; i < nBlocks; ++i){
       for (int j=0; j < nBlocks; ++j){
         L.symmetricFill(i,j);
       }
     }
-    L.print("starting L");
 
-    //fill the matrix
     for (int i=0; i < nBlocks; ++i){
       for (int j=0; j <= i; ++j){
         DoubleArray Aij = A.block(i,j);
         for (int k=0; k < nBlocks; ++k){
           DoubleArray Lik = L.block(i,k);
           DoubleArray Ljk = L.block(j,k);
-          gemm(blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
+          gemm(i,j,k,blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
         }
       }
     }
-
-    A.print("starting A");
   }
 
+  sch->resetIter();
 
-
-  for (int i=0; i < ncopies; ++i, sch->nextIter()){
+  for (int iter=0; iter < ncopies; ++iter, sch->nextIter()){
     Task* root = 0;
     if (sch->rank() == 0){
       root = initDag(A);
     }
     sch->run(root);
+    int nfailures = 0;
+    for (int i=0; i < nBlocks; ++i){
+      //just check the diagonal blocks...
+      //the other blocks end up weird and transposed
+      DoubleArray Aii = A.block(i,i);
+      DoubleArray Lii = L.block(i,i);
+      int nelems = blockSize * blockSize;
+      double tol = 1e-4;
+      for (int j=0; j < nelems; ++j){
+        double delta = fabs(Aii[j] - Lii[j]);
+        if (delta > tol){
+          nfailures++;
+        }
+      }
+    }
+    if (nfailures){
+      printf("Cholesky failed with %d wrong elements on iteration %d\n",
+        nfailures, iter);
+    } else {
+      printf("Cholesky passed validation test on iteration %d\n", iter);
+    }
   }
+
+  fflush(stdout);
+
+  //A.print("factorized A");
+
+
   sch->deallocateHeap();
 
   return 0;

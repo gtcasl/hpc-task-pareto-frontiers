@@ -78,6 +78,15 @@ Scheduler::assignBuffer(BufferBase* buf){
 }
 
 void
+Scheduler::resetIter()
+{
+  next_copy_ = 0;
+  for (auto& buf : buffers_){
+    assignBuffer(buf);
+  }
+}
+
+void
 Scheduler::nextIter()
 {
   next_copy_++;

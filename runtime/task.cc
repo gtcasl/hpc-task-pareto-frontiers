@@ -122,6 +122,7 @@ Task::getTime() const
 void
 Task::run(int worker, int start_tick)
 {
+  dep_debug("Running task %p\n", this);
   start_tick_ = start_tick;
   start_ = getTime();
   worker_ = worker;

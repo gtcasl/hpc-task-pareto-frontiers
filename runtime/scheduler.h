@@ -50,6 +50,8 @@ class Scheduler
 
   void nextIter();
 
+  void resetIter();
+
   void*
   relocatePointer(size_t offset){
     void* ret = ((char*)mmap_buffer_) + offset;
