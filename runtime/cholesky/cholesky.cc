@@ -45,8 +45,8 @@ trsm(int size, DoubleArray A, DoubleArray B)
   double alpha = 1.0;
   dtrsm(&side, &uplo, &trans, &diag,
     &size, &size, &alpha,
-    A.buffer, &size,
-    B.buffer, &size);
+    A, &size,
+    B, &size);
 }
 
 void
@@ -54,12 +54,12 @@ potrf(int size, DoubleArray A)
 {
   char uplo = 'U';
   int info;
-  dpotrf(&uplo, &size, A.buffer, &size, &info);
+  dpotrf(&uplo, &size, A, &size, &info);
   if (info != 0){
     fprintf(stderr, "FAILURE on DPOTRF: %d\n", info);
     abort();
   }
-  double* ptr = A.buffer;
+  double* ptr = A;
 #pragma omp parallel for
   for (int i=0; i < size; ++i){
     for (int j=0; j < size; ++j, ++ptr){
@@ -80,8 +80,8 @@ syrk(
   char ta = trans ? 'N' : 'T';
   char uplo = 'U';
   dsyrk(&uplo, &ta, &size, &size, 
-    &alpha, A.buffer, &size,
-    &beta, C.buffer, &size);
+    &alpha, A, &size,
+    &beta, C, &size);
 
 #pragma omp parallel for
   for (int i=0; i < size; ++i){
@@ -105,9 +105,9 @@ gemm(int size,
   char lt = ltrans ? 'N' : 'T'; //GD fortran
   char rt = rtrans ? 'N' : 'T'; //GD fortran
   dgemm(&lt, &rt, &size, &size, &size,
-    &alpha, left.buffer, &size, 
-    right.buffer, &size, 
-    &beta, product.buffer, &size);
+    &alpha, left, &size, 
+    right, &size, 
+    &beta, product, &size);
 }
 
 class Matrix
@@ -127,7 +127,7 @@ class Matrix
     int colStop = colStart + blockSize_;
     int idx = 0;
     DoubleArray block = storage_.offset(blockOffset(row,col));
-    double* valptr = block.buffer;
+    double* valptr = block;
     for (int i=rowStart; i != rowStop; ++i){
       for (int j=colStart; j != colStop; ++j, ++valptr, ++idx){
         if (i >= j){
@@ -162,14 +162,14 @@ class Matrix
         lastRowBlock = iBlock;
       }
       int offset = (iBlock*blockGridSize_*blockStorageSize) + iOffset*blockSize_;
-      double* ptr = storage_.offset(offset).buffer;
+      double* ptr = storage_.offset(offset);
       for (int j=0; j < ncols; ++j, ++ptr){
         int jBlock = j / blockSize_;
         int jOffset = j % blockSize_;
         if (jBlock != lastColBlock){
           int offset = (iBlock*blockGridSize_+jBlock)*blockStorageSize + (iOffset*blockSize_ + jOffset);
           printf("    ");
-          ptr = storage_.offset(offset).buffer;
+          ptr = storage_.offset(offset);
           lastColBlock = jBlock;
         }
         //printf("Pointer %p is %f\n", ptr, *ptr);
@@ -205,6 +205,7 @@ Task*
 initDag(Matrix& A)
 {
   Task* root = 0;
+  Task* prev = 0;
 
   int nBlocks = A.blockGridSize();
   int blockSize = A.blockSize();
@@ -212,21 +213,33 @@ initDag(Matrix& A)
   for (int k=0; k < nBlocks; ++k){
     DoubleArray Akk = A.block(k,k);
     Task* diag = new_task(potrf, blockSize, Akk);
+    if (k == 0){
+      root = diag;
+    } else {
+      diag->dependsOn(prev);
+    }
+    prev = diag;
     for (int m=k+1; m < nBlocks; ++m){
       DoubleArray Amk = A.block(m,k);
       Task* solve = new_task(trsm, blockSize, Akk, Amk);
+      solve->dependsOn(prev);
+      prev = solve;
     }
     for (int n=k+1; n < nBlocks; ++n){
       DoubleArray Ann = A.block(n,n);
       DoubleArray Ank = A.block(n,k);
       //Amm -= Amk * Amk^T
       //Ank ends up transposed from the DTRSM solve
-      new_task(syrk, blockSize, true, -1.0, 1.0, Ann, Ank);
+      Task* symmUpd = new_task(syrk, blockSize, true, -1.0, 1.0, Ann, Ank);
+      symmUpd->dependsOn(prev);
+      prev = symmUpd;
       for (int m=n+1; m < nBlocks; ++m){
         DoubleArray Amk = A.block(m,k);
         DoubleArray Amn = A.block(m,n);
         //because of how awesome BLAS is, Ank is transposed backwards
-        new_task(gemm, blockSize, true, false, -1.0, 1.0, Amn, Amk, Ank);
+        Task* mult = new_task(gemm, blockSize, true, false, -1.0, 1.0, Amn, Amk, Ank);
+        mult->dependsOn(prev);
+        prev = mult;
       }
     }
   }
@@ -249,6 +262,9 @@ int cholesky(int argc, char** argv)
   int blockSize = 3;
   Matrix A(nblocks, blockSize);
 
+  //fill the matrix
+
+
   int ncopies = 1;
   sch->allocateHeap(ncopies);
 
@@ -264,3 +280,4 @@ int cholesky(int argc, char** argv)
   return 0;
 }
 
+RegisterTest("cholesky", cholesky);

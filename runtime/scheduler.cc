@@ -276,7 +276,7 @@ class Logger{
 };
 
 void
-BasicScheduler::runMaster(Task* root)
+AdvancedScheduler::runMaster(Task* root)
 {
   /* TODO: Add logging to document when decisions are made,
    * ie, out of power, out of cores, could use more cores, etc
@@ -552,3 +552,46 @@ BasicScheduler::runMaster(Task* root)
   logger.log("time_s", end_time - start_time);
 }
 
+void
+BasicScheduler::runMaster(Task* root)
+{
+  std::list<int> availableWorkers;
+  for (int i=1; i < nworkers(); ++i){ //leave off 0
+    availableWorkers.push_back(i);
+  }
+
+  std::list<Task*> runningTasks;
+  std::list<Task*> pendingTasks;
+
+  root->run(0,0); //run the first task on worker 0
+  runningTasks.push_back(root);
+  while (!runningTasks.empty()){
+    std::list<Task*>::iterator tmp,
+      it = runningTasks.begin(),
+      end = runningTasks.end();
+    while (it != end){
+      tmp = it++;
+      Task* t = *tmp;
+      if (t->checkDone()){
+        availableWorkers.push_front(t->worker());
+        runningTasks.erase(tmp);
+        t->clearListeners(pendingTasks);
+      }
+    }
+
+    while (!pendingTasks.empty()){
+      if (availableWorkers.empty()){
+        break;
+      }
+
+      int worker = availableWorkers.front(); 
+      availableWorkers.pop_front();
+
+      Task* t = pendingTasks.front();
+      pendingTasks.pop_front();
+
+      t->run(worker,0);
+      runningTasks.push_back(t);
+    }
+  }
+}

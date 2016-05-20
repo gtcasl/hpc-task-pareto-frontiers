@@ -1,19 +1,20 @@
 TARGET := run
-SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc
+SRC := $(shell ls *.cc) cholesky/cholesky.cc 
+#$(shell ls cg/*.cc)
 HEADERS := $(shell ls *.h)
 
-target := gcc
-#target := darwin
+#target := gcc
+target := darwin
 #target := mic
-target := intel
+#target := intel
 
 MPI := $(HOME)/Programs/install/mpich2/bin/
-MPI :=
+MPI := 
 
 CXX :=    $(MPI)mpicxx
 CC :=     $(MPI)mpicc
 CXXFLAGS := -fPIC -O0 -g -Wall -Wextra
-CPPFLAGS := -I. -std=c++11 -mkl
+CPPFLAGS := -I. -std=c++11 
 LIBDIR :=   
 PREFIX :=   
 LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
@@ -23,7 +24,7 @@ CXXFLAGS := $(CXXFLAGS) -fopenmp
 endif
 
 ifeq ($(target),darwin)
-LDFLAGS := $(LDFLAGS) -stdlib=libc++
+LDFLAGS := $(LDFLAGS) -lblas -llapack
 CPPFLAGS := $(CPPFLAGS) -Dno_affinity -Dno_timespec -Dno_mkl -Dno_miclib
 endif
 

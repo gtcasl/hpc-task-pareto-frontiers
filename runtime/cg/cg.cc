@@ -265,7 +265,9 @@ int cg(int argc, char** argv)
   sch->init(argc, argv);
 
   // disable dynamic thread adjustment in MKL
+#ifndef no_mkl
   mkl_set_dynamic(0);
+#endif
 
   RegisterTask(start,void,int);
   RegisterTask(sum_contribs, void, int, DoubleArray, DoublePtr);

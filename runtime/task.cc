@@ -1,6 +1,8 @@
 #include "task.h"
 #include <sys/time.h>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 #include <iostream>
 #include <limits>
 
@@ -77,7 +79,9 @@ Task::setup()
 {
   nthread_ = CPU_COUNT(&cpumask_);
   sched_setaffinity(0, sizeof(cpu_set_t), &cpumask_);
+#ifdef _OPENMP
   omp_set_num_threads(nthread_);
+#endif
 }
 
 void

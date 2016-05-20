@@ -223,6 +223,12 @@ class BasicScheduler : public Scheduler
   void runMaster(Task* root);
 };
 
+class AdvancedScheduler : public Scheduler
+{
+ public:
+  void runMaster(Task* root);
+};
+
 
 
 #endif

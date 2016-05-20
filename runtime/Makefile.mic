@@ -1,5 +1,5 @@
 TARGET := run
-SRC := $(shell ls *.cc) $(shell ls cg/*.cc)
+SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc
 HEADERS := $(shell ls *.h)
 
 CXX :=    mpiicpc
