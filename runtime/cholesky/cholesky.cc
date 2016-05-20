@@ -126,7 +126,8 @@ class Matrix
     int rowStop = rowStart + blockSize_;
     int colStop = colStart + blockSize_;
     int idx = 0;
-    DoubleArray block = storage_.offset(blockOffset(row,col));
+    int offset = blockOffset(row,col);
+    DoubleArray block = storage_.offset(offset);
     double* valptr = block;
     for (int i=rowStart; i != rowStop; ++i){
       for (int j=colStart; j != colStop; ++j, ++valptr, ++idx){
@@ -168,6 +169,7 @@ class Matrix
         int jOffset = j % blockSize_;
         if (jBlock != lastColBlock){
           int offset = (iBlock*blockGridSize_+jBlock)*blockStorageSize + (iOffset*blockSize_ + jOffset);
+          //printf("Hopping to block %d,%d at offset %d\n", iBlock, jBlock, offset);
           printf("    ");
           ptr = storage_.offset(offset);
           lastColBlock = jBlock;
@@ -258,15 +260,38 @@ int cholesky(int argc, char** argv)
   RegisterTask(syrk, void, int, bool, double, double, DoubleArray, DoubleArray);
   RegisterTask(gemm, void, int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
 
-  int nblocks = 3;
+  int nBlocks = 3;
   int blockSize = 3;
-  Matrix A(nblocks, blockSize);
-
-  //fill the matrix
-
+  Matrix A(nBlocks, blockSize);
+  Matrix L(nBlocks, blockSize);
 
   int ncopies = 1;
   sch->allocateHeap(ncopies);
+
+  if (sch->rank() == 0){
+    for (int i=0; i < nBlocks; ++i){
+      for (int j=0; j < nBlocks; ++j){
+        L.symmetricFill(i,j);
+      }
+    }
+    L.print("starting L");
+
+    //fill the matrix
+    for (int i=0; i < nBlocks; ++i){
+      for (int j=0; j <= i; ++j){
+        DoubleArray Aij = A.block(i,j);
+        for (int k=0; k < nBlocks; ++k){
+          DoubleArray Lik = L.block(i,k);
+          DoubleArray Ljk = L.block(j,k);
+          gemm(blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
+        }
+      }
+    }
+
+    A.print("starting A");
+  }
+
+
 
   for (int i=0; i < ncopies; ++i, sch->nextIter()){
     Task* root = 0;

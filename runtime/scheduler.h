@@ -199,7 +199,8 @@ class Buffer : public BufferBase {
   Buffer<T>
   offset(int off) const {
     Buffer<T> newbuf(nelems, mmap_offset + off*sizeof(T));
-    newbuf.buffer = (T*) Scheduler::global->relocatePointer(mmap_offset);
+    T* relocatedBuf = (T*) Scheduler::global->relocatePointer(mmap_offset);
+    newbuf.buffer = (relocatedBuf + off);
     return newbuf;
   }
 

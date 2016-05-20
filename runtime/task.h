@@ -10,7 +10,9 @@
 #include <list>
 #include <set>
 #include <utility>
+#ifdef _OPENMP
 #include <omp.h>
+#endif
 #include <string>
 #include <sstream>
 #include <fstream>
