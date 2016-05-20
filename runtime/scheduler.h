@@ -3,12 +3,18 @@
 
 #include <vector>
 #include <task.h>
+#include <unordered_set>
+#ifndef no_miclib
+#include <miclib.h>
+#endif
+#include <signal.h>
 
 class BufferBase
 {
  public:
   size_t mmap_offset;
   int nelems;
+  void* buffer;
 };
 
 class Scheduler
@@ -17,6 +23,10 @@ class Scheduler
 
  public:
   void run(Task* root);
+
+  void finalize();
+
+  void stop();
 
   virtual void init(int argc, char** argv);
 
@@ -46,21 +56,55 @@ class Scheduler
     return ret;
   }
 
+  int numAvailableCores() const {
+    return available_cores_.size();
+  }
+
+  void returnCpu(int cpu);
+
+  int claimCpu();
+
   virtual ~Scheduler(){
     global = 0;
+#ifndef no_miclib
+    mic_close_device(mic_device_);
+#endif
   }
+
+  uint32_t readMICPoweruW() const;
+  static void overflow(int signum, siginfo_t*, void*);
+  double getTime() const;
 
  protected:
   Scheduler() :
     mmap_buffer_(0),
     mmap_size_(0),
     total_buffer_size_(0),
-    next_copy_(0) {
+    next_copy_(0),
+    cumulative_power_(0),
+    num_power_samples_(0),
+    max_power_(0),
+    power_limit_(350),
+    available_power_(power_limit_)
+  {
     if (global){
       fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
       abort();
     }
+    global = this;
+    // initialize power measurement
+#ifndef no_miclib
+    if(mic_open_device(&mic_device_, 0) != E_MIC_SUCCESS){
+      std::cerr << "Error: Unable to open MIC" << std::endl;
+      abort();
+    }
+#endif
   }
+  long long cumulative_power_;
+  long num_power_samples_;
+  uint32_t max_power_;
+  uint32_t power_limit_; // I think the default of 350 is way above the TDP
+  uint32_t available_power_; // amount of power that can be used at the moment
 
  private:
   void addNeededBuffer(BufferBase* buf, size_t size);
@@ -104,13 +148,17 @@ class Scheduler
   int nworkers_;
   int rank_;
   int nproc_;
+
+  std::unordered_set<int> available_cores_;
+
+#ifndef no_miclib
+  struct mic_device* mic_device_;
+#endif
 };
 
 template <class T>
 class Buffer : public BufferBase {
  public:
-  T* buffer;
-
   Buffer(int n) {
     nelems = 0;
     mmap_offset = 0;
@@ -132,27 +180,42 @@ class Buffer : public BufferBase {
     buffer = (T*) Scheduler::global->relocatePointer(mmap_offset);
   }
 
+  operator T*() {
+    return (T*) buffer;
+  }
+
   T&
   operator[](int idx){
-    return buffer[idx];
+    T* buf = (T*) buffer;
+    return buf[idx];
   }
 
   T&
   operator*(){
-    return *buffer;
+    T* buf = (T*) buffer;
+    return *buf;
   }
 
   Buffer<T>
   offset(int off) const {
-    return Buffer<T> (nelems, mmap_offset + off);
+    Buffer<T> newbuf(nelems, mmap_offset + off*sizeof(T));
+    newbuf.buffer = (T*) Scheduler::global->relocatePointer(mmap_offset);
+    return newbuf;
   }
 
   const T&
   operator[](int idx) const {
-    return buffer[idx];
+    const T* buf = (const T*) buffer;
+    return buf[idx];
   }
 
 };
+
+template <class T>
+std::ostream& 
+operator<<(std::ostream& os, const Buffer<T>& buf){
+  os << "Buffer: offset=" << buf.mmap_offset << " ptr=" << (void*) buf.buffer << " nelems=" << buf.nelems;
+}
 
 class BasicScheduler : public Scheduler
 {

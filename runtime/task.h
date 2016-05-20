@@ -10,16 +10,25 @@
 #include <list>
 #include <set>
 #include <utility>
+#include <omp.h>
+#include <string>
+#include <sstream>
+#include <fstream>
+#include <vector>
+#include <algorithm>
 
 #ifdef no_affinity
 struct cpu_set_t {};
 #define sched_setaffinity(...)
 #define CPU_ZERO(...)
+#define CPU_SET(...)
+#define CPU_COUNT(x)  1
 #endif
 
+#define NUM_THREADS 228
 
 #define new_task(taskName, ...) \
-  task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
+  make_task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
 
 class Task {
  public:
@@ -48,9 +57,14 @@ class Task {
     return &cpumask_;
   }
 
+  int
+  cpuCount() const {
+    return CPU_COUNT(&cpumask_);
+  }
+
   int typeID() const { return typeID_; }
 
-  void run(int worker);
+  void run(int worker, int start_tick);
   
   void setup();
   
@@ -71,11 +85,25 @@ class Task {
   }
 
   void clearListeners(std::list<Task*>& ready);
+
+  double getStartTime() const {
+    return start_;
+  }
+
+  int getStartTick() const { return start_tick_; }
+
+  int getNumThreads() const;
+
+  double estimateTime() const;
+
+  int getNumListeners() const { return listeners_.size(); }
   
  protected:
   Task(int mySize, int typeID);
 
  private:
+  double getTime() const;
+
   static const int enqueue_tag = 100;
   static const int done_tag = 101;
   int mySize_;
@@ -96,23 +124,79 @@ class Task {
    * The tasks that require this task to complete before running
    */
   std::set<Task*> listeners_;
-
+  double start_;
+  int start_tick_;
 };
 
 class TaskRunner {
  public:
   virtual void run(Task* t, int size) = 0;
 
-  static void store(int id, TaskRunner* r){
+  static void store(int id, TaskRunner* r, const char* name){
     runners_[id] = r;
+    names_[id] = name;
+    std::vector<double> times(NUM_THREADS, 0.0);
+    std::vector<double> powers(NUM_THREADS, 0.0);
+    std::string sname = name;
+    sname += ".csv";
+    std::ifstream ifs{sname};
+    if(ifs.good()){
+      std::string line;
+      std::getline(ifs, line); // kill header
+      for(int i = 0; i < NUM_THREADS; ++i){
+        std::getline(ifs, line); 
+        std::stringstream stst{line};
+        std::string elem;
+        std::getline(stst, elem, ','); // nthreads
+        std::getline(stst, elem, ','); // energy
+        std::getline(stst, elem, ','); // time
+        times[i] = std::stod(elem);
+        std::getline(stst, elem, ','); // power
+        powers[i] = std::stod(elem);
+        std::getline(stst, elem, ','); // speedup
+      }
+    }
+    times_[id] = times;
+    powers_[id] = powers;
+    auto min = std::min_element(std::begin(times), std::end(times));
+    min_times_[id] = *min;
+    // if times[0] is fastest, only need 1 thread
+    min_threads_[id] = std::distance(std::begin(times), min) + 1;
   }
 
   static TaskRunner* get(int id){
     return runners_[id];
   }
 
+  static const char* get_name(int id){
+    return names_[id];
+  }
+
+  static const std::vector<double>& get_times(int id){
+    return times_[id];
+  }
+
+  static const std::vector<double>& get_powers(int id){
+    return powers_[id];
+  }
+
+  static double get_min_time(int id){
+    return min_times_[id];
+  }
+
+  static int get_min_threads(int id){
+    return min_threads_[id];
+  }
+
+  static int get_next_least_powerful_num_threads(int id, int cur_num_threads);
+
  private:
   static std::map<int, TaskRunner*> runners_;
+  static std::map<int, const char*> names_;
+  static std::map<int, std::vector<double> > times_;
+  static std::map<int, double> min_times_;
+  static std::map<int, int> min_threads_;
+  static std::map<int, std::vector<double> > powers_;
 };
 
 namespace impl {
@@ -185,6 +269,15 @@ class TaskRunner_impl : public TaskRunner
     }
     auto theTask = static_cast<TaskType*>(t);
     theTask->setup();
+    int cores = t->cpuCount();
+#pragma omp parallel
+{
+    int threads = omp_get_num_threads();
+    if(threads != cores){
+      std::cerr << "Error: unable to set correct number of cores. Have: " 
+                << threads << " but expecting " << cores << std::endl;
+    }
+}
     theTask->run();
     theTask->notifyDone();
   }
@@ -204,21 +297,21 @@ class FxnTraits
 
 template <typename myFxnTraits>
 int
-registerFunction(typename myFxnTraits::Fxn f, int id){
+registerFunction(typename myFxnTraits::Fxn f, int id, const char* name){
   impl::FunctionMap<typename myFxnTraits::Fxn>::store(id, f);
   typedef typename myFxnTraits::Runner myRunner;
-  TaskRunner::store(id, new myRunner);
+  TaskRunner::store(id, new myRunner, name);
   return 0;
 }
 
 #define RegisterTask(fxn,ret,...) \
   typedef impl::FxnTraits<ret,__VA_ARGS__> type_traits_##fxn; \
-  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id);
+  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id,#fxn);
   
 
 template <typename Fxn, typename... Args>
 Task*
-task(Fxn f, int id, const std::tuple<Args...>& t){
+make_task(Fxn f, int id, const std::tuple<Args...>& t){
   return new impl::Task_tmpl<Fxn,Args...>(t,id);
 }
 

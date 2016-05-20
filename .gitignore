@@ -4,3 +4,5 @@ src/spmv
 *.o
 src/blas
 runtime/run
+run.host
+run.mic

@@ -8,7 +8,7 @@ typedef Buffer<DoubleArray> DoubleChunkArray;
 
 inline int
 index(int ix, int iy, int iz, int nx, int ny, int nz){
-  return iz*nx*ny + iy*nx + ix;
+  return ix*ny*nz + iy*nz + iz;
 }
 
 inline int
@@ -69,6 +69,7 @@ generate_problem_27pt(
             }
           }
         }
+        if (nnzInRow > 27) abort();
         nnzPerRow[row] = nnzInRow;
       }
     }

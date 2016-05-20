@@ -9,10 +9,10 @@ multiply(
   IntArray nnzPerRow,
   IntArray nonzerosInRow)
 {
-  double* v = vector.buffer;
-  double* r = residual.buffer;
-  double* A = matrix.buffer;
-  int* nonzeros = nonzerosInRow.buffer;
+  double* v = vector;
+  double* r = residual;
+  double* A = matrix;
+  int* nonzeros = nonzerosInRow;
   #pragma omp parallel for
   for (int row=0; row < nrows; ++row){
     double res = 0; 
