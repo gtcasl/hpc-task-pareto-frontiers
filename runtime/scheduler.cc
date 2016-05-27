@@ -53,7 +53,7 @@ Scheduler::init(int argc, char** argv)
   }
 }
 
-static const char* mmap_fname = "mmap_heap";
+static const char* mmap_fname = "/mmap_heap";
 
 void
 Scheduler::addNeededBuffer(BufferBase* buf, size_t size){
@@ -99,19 +99,24 @@ void
 Scheduler::allocateHeap(int ncopies)
 {
 
-  if(rank_ == 0){
-    shm_unlink(mmap_fname);
-  }
-  MPI_Barrier(MPI_COMM_WORLD);
   ncopies_ = ncopies;
 
-  int fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
-  if (fd < 0){ //oops, someone else already created it
-    fd = shm_open(mmap_fname, O_RDWR, S_IRWXU);
+  int fd;
+  if(rank_ == 1){
+    int res = shm_unlink(mmap_fname);
+    if(res == -1){
+      printf("---- Unable to unlink old object\n");
+    }
+    fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
   }
-  if (fd < 0){
-    error("invalid fd %d shm_open on %s: error=%d",
-      fd, mmap_fname, errno);
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  if(rank_ != 1){
+    fd = shm_open(mmap_fname, O_RDWR, S_IRWXU);
+    if (fd < 0){
+      error("invalid fd %d shm_open on %s: error=%d",
+        fd, mmap_fname, errno);
+    }
   }
 
   mmap_size_ = total_buffer_size_ * ncopies;

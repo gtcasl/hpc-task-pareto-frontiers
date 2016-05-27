@@ -1,4 +1,9 @@
 #include <test.h>
+#ifdef no_mkl
+#include <fake_mkl.h>
+#else
+#include <mkl.h>
+#endif
 
 #if CHOLESKY_DEBUG
 #define task_debug(...) printf(__VA_ARGS__)
@@ -11,118 +16,14 @@ static enum fxn_id {
   gemm_id,
   syrk_id,
   trsm_id,
+  dummy_id,
 } test_ids;
-
-extern "C" 
-int dgemm(char *transa, char *transb, int *m, int *n, int *k, 
-  double *alpha, double *a, int *lda, 
-  double *b, int *ldb, double *beta, 
-  double *c, int *ldc);
-
-extern "C"
-int dsyrk(char *uplo, char *trans, int *n, int *k, 
-  double *alpha, double *a, int *lda, double *beta, 
-  double *c, int *ldc);
-
-extern "C" 
-int dpotrf(char *uplo, int *n, double *a, int* lda, int* info);
-
-extern "C" 
-int dtrsm(char *side, char *uplo, char *transa, char *diag, 
-  int *m, int *n, 
-  double* alpha, double* a, int* lda, 
-  double* b, int* ldb);
 
 typedef Buffer<double> DoublePtr;
 typedef Buffer<double> DoubleArray;
 typedef Buffer<int> IntArray;
 typedef Buffer<IntArray> IntChunkArray;
 typedef Buffer<DoubleArray> DoubleChunkArray;
-
-void
-trsm(int k, int m, int size, DoubleArray A, DoubleArray B)
-{
-  task_debug("Solving TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
-  //solve AX = B
-  //B overwrriten with X
-  char side = 'R';
-  char uplo = 'U';
-  char trans = 'N';
-  char diag = 'N';
-  double alpha = 1.0;
-  dtrsm(&side, &uplo, &trans, &diag,
-    &size, &size, &alpha,
-    A, &size,
-    B, &size);
-}
-
-void
-potrf(int k, int size, DoubleArray A)
-{
-  task_debug("Running POTRF A(%d,%d)\n", k, k);
-  char uplo = 'U';
-  int info;
-  dpotrf(&uplo, &size, A, &size, &info);
-  if (info != 0){
-    fprintf(stderr, "FAILURE on DPOTRF: %d\n", info);
-    abort();
-  }
-  double* ptr = A;
-#pragma omp parallel for
-  for (int i=0; i < size; ++i){
-    for (int j=0; j < size; ++j, ++ptr){
-      if (j > i) *ptr = 0;
-    }
-  }
-}
-
-void
-syrk(
-  int k, int n,
-  int size,
-  bool trans,
-  double alpha, 
-  double beta,
-  DoubleArray C,
-  DoubleArray A)
-{
-  task_debug("Adding  SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, k, n);
-  char ta = trans ? 'N' : 'T';
-  char uplo = 'U';
-  dsyrk(&uplo, &ta, &size, &size, 
-    &alpha, A, &size,
-    &beta, C, &size);
-
-#pragma omp parallel for
-  for (int i=0; i < size; ++i){
-    for (int j=i+1; j < size; ++j){
-      int toIdx = i*size + j;
-      int fromIdx = j*size + i;
-      C[toIdx] = C[fromIdx];
-    }
-  }
-}
-
-void
-gemm(
-  int m, int n, int k,
-  int size,
-  bool ltrans, 
-  bool rtrans,
-  double alpha,
-  double beta,
-  DoubleArray product, 
-  DoubleArray left, 
-  DoubleArray right){
-  task_debug("Adding  GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
-    m, n, m, k, k, n);
-  char lt = ltrans ? 'N' : 'T'; //GD fortran
-  char rt = rtrans ? 'N' : 'T'; //GD fortran
-  dgemm(&lt, &rt, &size, &size, &size,
-    &alpha, left, &size, 
-    right, &size, 
-    &beta, product, &size);
-}
 
 class Matrix
 {
@@ -154,6 +55,12 @@ class Matrix
       }
     }
   }
+
+  Matrix(int matrixSize, int blockSize, DoubleArray storage) :
+    blockSize_(blockSize),
+    blockGridSize_(matrixSize),
+    storage_(storage)
+  {}
 
   Matrix(int matrixSize, int blockSize) : 
     blockSize_(blockSize), 
@@ -210,12 +117,99 @@ class Matrix
   block(int i, int j){
     return storage_.offset(blockOffset(i,j));
   }
+  double* storageAddr() {
+    double* res = storage_;
+    return res;
+  }
 
  private:
   int blockSize_;
   int blockGridSize_;
   DoubleArray storage_;
 };
+
+void
+trsm(int k, int m, int size, DoubleArray A, DoubleArray B)
+{
+  task_debug("Solving TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
+  //solve AX = B
+  //B overwrriten with X
+  char side = 'R';
+  char uplo = 'U';
+  char trans = 'N';
+  char diag = 'N';
+  double alpha = 1.0;
+  cblas_dtrsm(CblasColMajor, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit,
+    size, size, alpha,
+    A, size,
+    B, size);
+}
+
+void
+potrf(int k, int size, DoubleArray A)
+{
+  task_debug("Running POTRF A(%d,%d)\n", k, k);
+  char uplo = 'U';
+  int info = LAPACKE_dpotrf(LAPACK_COL_MAJOR, uplo, size, A, size);
+  if (info != 0){
+    fprintf(stderr, "FAILURE on DPOTRF: %d\n", info);
+    abort();
+  }
+  double* ptr = A;
+#pragma omp parallel for
+  for (int i=0; i < size; ++i){
+    for (int j=0; j < size; ++j, ++ptr){
+      if (j > i) *ptr = 0;
+    }
+  }
+}
+
+void
+syrk(
+  int k, int n,
+  int size,
+  bool trans,
+  double alpha, 
+  double beta,
+  DoubleArray C,
+  DoubleArray A)
+{
+  task_debug("Adding  SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, k, n);
+  CBLAS_TRANSPOSE ta = trans ? CblasNoTrans : CblasTrans;
+  cblas_dsyrk(CblasColMajor, CblasUpper, ta, size, size, 
+    alpha, A, size,
+    beta, C, size);
+
+#pragma omp parallel for
+  for (int i=0; i < size; ++i){
+    for (int j=i+1; j < size; ++j){
+      int toIdx = i*size + j;
+      int fromIdx = j*size + i;
+      C[toIdx] = C[fromIdx];
+    }
+  }
+}
+
+void
+gemm(
+  int m, int n, int k,
+  int size,
+  bool ltrans, 
+  bool rtrans,
+  double alpha,
+  double beta,
+  DoubleArray product, 
+  DoubleArray left, 
+  DoubleArray right){
+  task_debug("Adding  GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
+    m, n, m, k, k, n);
+  CBLAS_TRANSPOSE lt = ltrans ? CblasNoTrans : CblasTrans; //GD fortran
+  CBLAS_TRANSPOSE rt = rtrans ? CblasNoTrans : CblasTrans; //GD fortran
+  cblas_dgemm(CblasColMajor, lt, rt, size, size, size,
+    alpha, left, size, 
+    right, size, 
+    beta, product, size);
+}
 
 class TaskMap {
  public:
@@ -229,6 +223,25 @@ class TaskMap {
   std::vector<Task*> tasks_;
   int size_;
 };
+
+void dummy(DoubleArray A){
+  printf("running dummy\n");
+  Matrix m(4,4,A);
+  m.print();
+  //for(int i = 0; i < 16; i++){
+  //  for(int j = 0; j < 16; j++){
+  //    printf("%f  ", A[i*16 + j]);
+  //  }
+  //  printf("\n");
+  //}
+}
+
+Task*
+initDag2(Matrix& A)
+{
+  Task* root = 0;
+  return new_task(dummy, A.block(0,0));
+}
 
 Task*
 initDag(Matrix& A)
@@ -297,7 +310,8 @@ void fill(int nBlocks, int blockSize, Matrix& L, Matrix& A)
 int cholesky(int argc, char** argv)
 {
   //ALWAYS Initialize the scheduler first
-  Scheduler* sch = new BasicScheduler;
+  //Scheduler* sch = new BasicScheduler;
+  Scheduler* sch = new AdvancedScheduler;
   sch->init(argc, argv);
 
   RegisterTask(potrf, void, int,
@@ -308,17 +322,18 @@ int cholesky(int argc, char** argv)
     int, bool, double, double, DoubleArray, DoubleArray);
   RegisterTask(gemm,  void, int, int, int,
     int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
+  RegisterTask(dummy, void, DoubleArray);
 
   int nBlocks = 4;
   int blockSize = 4;
   Matrix A(nBlocks, blockSize);
   Matrix L(nBlocks, blockSize);
 
-  int ncopies = 2;
+  int ncopies = 1;
   sch->allocateHeap(ncopies);
 
   for (int c=0; c < ncopies; ++c, sch->nextIter()){
-    if (sch->rank() != 0) break;
+    if (sch->rank() != 1) break;
 
     for (int i=0; i < nBlocks; ++i){
       for (int j=0; j < nBlocks; ++j){
@@ -345,6 +360,7 @@ int cholesky(int argc, char** argv)
     if (sch->rank() == 0){
       root = initDag(A);
     }
+
     sch->run(root);
     int nfailures = 0;
     for (int i=0; i < nBlocks; ++i){
