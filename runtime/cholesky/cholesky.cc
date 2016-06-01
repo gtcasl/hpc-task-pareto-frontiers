@@ -360,6 +360,7 @@ int cholesky(int argc, char** argv)
     if (sch->rank() == 0){
       root = initDag(A);
     }
+    MPI_Barrier(MPI_COMM_WORLD);
 
     sch->run(root);
     int nfailures = 0;

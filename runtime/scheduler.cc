@@ -100,6 +100,7 @@ Scheduler::allocateHeap(int ncopies)
 {
 
   ncopies_ = ncopies;
+  mmap_size_ = total_buffer_size_ * ncopies;
 
   int fd;
   if(rank_ == 1){
@@ -108,31 +109,36 @@ Scheduler::allocateHeap(int ncopies)
       printf("---- Unable to unlink old object\n");
     }
     fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
+    if(fd < 0){
+      error("invalid fd %d shm_open on %s: error=%d: rank %d\n",
+        fd, mmap_fname, errno, rank_);
+      perror(NULL);
+    }
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
-  if(rank_ != 1){
+  if(rank_ > 1){
     fd = shm_open(mmap_fname, O_RDWR, S_IRWXU);
     if (fd < 0){
-      error("invalid fd %d shm_open on %s: error=%d",
-        fd, mmap_fname, errno);
+      error("invalid fd %d shm_open on %s: error=%d: rank %d\n",
+        fd, mmap_fname, errno, rank_);
+      perror(NULL);
     }
   }
 
-  mmap_size_ = total_buffer_size_ * ncopies;
 
-  ftruncate(fd, mmap_size_);
+  if(rank_ > 0){
+    ftruncate(fd, mmap_size_);
 
-  assert(mmap_size_ % 4096 == 0 && "BAD MMAP SIZE");
-  mmap_buffer_ = mmap(NULL, mmap_size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-  if (mmap_buffer_ == ((void*)-1)){
-    error("bad mmap on shm_open %s:%d: error=%d",
-      mmap_fname, fd, errno);
+    assert(mmap_size_ % 4096 == 0 && "BAD MMAP SIZE");
+    mmap_buffer_ = mmap(NULL, mmap_size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mmap_buffer_ == ((void*)-1)){
+      error("bad mmap on shm_open %s:%d: error=%d\n",
+        mmap_fname, fd, errno);
+      perror(NULL);
+    }
   }
 
-  //printf("allocated heap pointer %p of size %lu on rank %d\n", 
-  //  mmap_buffer_, mmap_size_, rank_);
-  
   for (auto& buf : buffers_){
     assignBuffer(buf);
   }
