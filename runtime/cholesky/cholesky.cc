@@ -363,6 +363,7 @@ int cholesky(int argc, char** argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     sch->run(root);
+    sch->stop();
     int nfailures = 0;
     for (int i=0; i < nBlocks; ++i){
       //just check the diagonal blocks...
@@ -392,6 +393,7 @@ int cholesky(int argc, char** argv)
 
 
   sch->deallocateHeap();
+  sch->finalize();
 
   return 0;
 }

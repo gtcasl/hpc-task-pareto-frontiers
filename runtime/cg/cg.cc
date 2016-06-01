@@ -349,6 +349,7 @@ int cg(int argc, char** argv)
   }
 
   for (int i=0; i < ncopies; ++i, sch->nextIter()){
+    MPI_Barrier(MPI_COMM_WORLD);
     Task* root = 0;
     if (sch->rank() == 0){
       root = initDag(cfg,

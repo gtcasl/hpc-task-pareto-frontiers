@@ -86,7 +86,7 @@ class Scheduler
     cumulative_power_(0),
     num_power_samples_(0),
     max_power_(0),
-    power_limit_(350),
+    power_limit_(1000),
     available_power_(power_limit_)
   {
     if (global){

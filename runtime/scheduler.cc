@@ -103,7 +103,7 @@ Scheduler::allocateHeap(int ncopies)
   mmap_size_ = total_buffer_size_ * ncopies;
 
   int fd;
-  if(rank_ == 1){
+  if(rank_ == 0 || rank_ == 1){
     int res = shm_unlink(mmap_fname);
     if(res == -1){
       printf("---- Unable to unlink old object\n");
@@ -117,7 +117,7 @@ Scheduler::allocateHeap(int ncopies)
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
-  if(rank_ > 1){
+  if(rank_ != 0 && rank_ != 1){
     fd = shm_open(mmap_fname, O_RDWR, S_IRWXU);
     if (fd < 0){
       error("invalid fd %d shm_open on %s: error=%d: rank %d\n",
@@ -126,17 +126,14 @@ Scheduler::allocateHeap(int ncopies)
     }
   }
 
+  ftruncate(fd, mmap_size_);
 
-  if(rank_ > 0){
-    ftruncate(fd, mmap_size_);
-
-    assert(mmap_size_ % 4096 == 0 && "BAD MMAP SIZE");
-    mmap_buffer_ = mmap(NULL, mmap_size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
-    if (mmap_buffer_ == ((void*)-1)){
-      error("bad mmap on shm_open %s:%d: error=%d\n",
-        mmap_fname, fd, errno);
-      perror(NULL);
-    }
+  assert(mmap_size_ % 4096 == 0 && "BAD MMAP SIZE");
+  mmap_buffer_ = mmap(NULL, mmap_size_, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+  if (mmap_buffer_ == ((void*)-1)){
+    error("bad mmap on shm_open %s:%d: error=%d\n",
+      mmap_fname, fd, errno);
+    perror(NULL);
   }
 
   for (auto& buf : buffers_){
@@ -471,7 +468,7 @@ AdvancedScheduler::runMaster(Task* root)
           // the loser is the task that slows the least with a delta in power
           // losing task: Task*, #threads, delta t, delta p
           // time goes up, power goes down
-          Task* losing_task;
+          Task* losing_task = nullptr;
           int new_threads;
           double delta_t{0.0};
           double delta_p;
@@ -490,6 +487,11 @@ AdvancedScheduler::runMaster(Task* root)
               delta_p = new_p - old_p;
             }
           }
+          std::cout << "losing: " << losing_task << std::endl;
+          for(const auto& t : pendingTasks){
+            std::cout << "pending: " << t << std::endl;
+          }
+          assert(losing_task != nullptr && "Error: Unable to find a losing task");
           assert((new_threads == 0 ||
                  new_threads < task_thread_assignments[losing_task]) &&
                  "Error: by lowering the power we're increasing the number of threads. Uh oh.");
