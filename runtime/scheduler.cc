@@ -18,6 +18,7 @@
 #include <sys/types.h>
 #include <signal.h>
 
+
 #define __GNU_SOURCE
 #include <sched.h>
 
@@ -105,9 +106,6 @@ Scheduler::allocateHeap(int ncopies)
   int fd;
   if(rank_ == 0 || rank_ == 1){
     int res = shm_unlink(mmap_fname);
-    if(res == -1){
-      printf("---- Unable to unlink old object\n");
-    }
     fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
     if(fd < 0){
       error("invalid fd %d shm_open on %s: error=%d: rank %d\n",
@@ -147,18 +145,9 @@ Scheduler::run(Task* root)
 {
   if (rank_ == 0){
     runMaster(root);
-  } else {
-    runWorker();
-  }
-}
-
-void
-Scheduler::stop()
-{
-  if (rank_ == 0){
     terminateWorkers();
   } else {
-    //do nothing
+    runWorker();
   }
 }
 

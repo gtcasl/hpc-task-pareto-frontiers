@@ -26,8 +26,6 @@ class Scheduler
 
   void finalize();
 
-  void stop();
-
   virtual void init(int argc, char** argv);
 
   static const int terminate_tag = 42;
@@ -162,7 +160,7 @@ template <class T>
 class Buffer : public BufferBase {
  public:
   Buffer(int n) {
-    nelems = 0;
+    nelems = n;
     mmap_offset = 0;
     buffer = 0;
     Scheduler::global->addNeededBuffer(this, n*sizeof(T));
@@ -218,6 +216,7 @@ template <class T>
 std::ostream& 
 operator<<(std::ostream& os, const Buffer<T>& buf){
   os << "Buffer: offset=" << buf.mmap_offset << " ptr=" << (void*) buf.buffer << " nelems=" << buf.nelems;
+  return os;
 }
 
 class BasicScheduler : public Scheduler

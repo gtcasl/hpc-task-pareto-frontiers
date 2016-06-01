@@ -1,9 +1,9 @@
-#include <test.h>
 #ifdef no_mkl
 #include <fake_mkl.h>
 #else
 #include <mkl.h>
 #endif
+#include <test.h>
 
 #if CHOLESKY_DEBUG
 #define task_debug(...) printf(__VA_ARGS__)
@@ -16,7 +16,6 @@ static enum fxn_id {
   gemm_id,
   syrk_id,
   trsm_id,
-  dummy_id,
 } test_ids;
 
 typedef Buffer<double> DoublePtr;
@@ -149,10 +148,15 @@ void
 potrf(int k, int size, DoubleArray A)
 {
   task_debug("Running POTRF A(%d,%d)\n", k, k);
+  //std::cout << A << std::endl;
+  //for(int i = 0; i < size; i++){
+  //  std::cout << A[i] << std::endl;
+  //}
   char uplo = 'U';
   int info = LAPACKE_dpotrf(LAPACK_COL_MAJOR, uplo, size, A, size);
   if (info != 0){
     fprintf(stderr, "FAILURE on DPOTRF: %d\n", info);
+    std::cout << "A[" << info << "]: " << A[info] << std::endl;
     abort();
   }
   double* ptr = A;
@@ -224,25 +228,6 @@ class TaskMap {
   int size_;
 };
 
-void dummy(DoubleArray A){
-  printf("running dummy\n");
-  Matrix m(4,4,A);
-  m.print();
-  //for(int i = 0; i < 16; i++){
-  //  for(int j = 0; j < 16; j++){
-  //    printf("%f  ", A[i*16 + j]);
-  //  }
-  //  printf("\n");
-  //}
-}
-
-Task*
-initDag2(Matrix& A)
-{
-  Task* root = 0;
-  return new_task(dummy, A.block(0,0));
-}
-
 Task*
 initDag(Matrix& A)
 {
@@ -313,6 +298,10 @@ int cholesky(int argc, char** argv)
   //Scheduler* sch = new BasicScheduler;
   Scheduler* sch = new AdvancedScheduler;
   sch->init(argc, argv);
+  // disable dynamic thread adjustment in MKL
+#ifndef no_mkl
+  mkl_set_dynamic(0);
+#endif
 
   RegisterTask(potrf, void, int,
     int, DoubleArray);
@@ -322,10 +311,16 @@ int cholesky(int argc, char** argv)
     int, bool, double, double, DoubleArray, DoubleArray);
   RegisterTask(gemm,  void, int, int, int,
     int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
-  RegisterTask(dummy, void, DoubleArray);
 
-  int nBlocks = 4;
-  int blockSize = 4;
+  if(argc != 4){
+    if(sch->rank() == 0){
+      std::cerr << "Usage: " << argv[1] << " <nblocks> <blocksize>" << std::endl;
+    }
+    return -1;
+  }
+
+  int nBlocks = atoi(argv[2]);
+  int blockSize = atoi(argv[3]);
   Matrix A(nBlocks, blockSize);
   Matrix L(nBlocks, blockSize);
 
@@ -363,7 +358,6 @@ int cholesky(int argc, char** argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     sch->run(root);
-    sch->stop();
     int nfailures = 0;
     for (int i=0; i < nBlocks; ++i){
       //just check the diagonal blocks...
@@ -379,11 +373,13 @@ int cholesky(int argc, char** argv)
         }
       }
     }
-    if (nfailures){
-      printf("Cholesky failed with %d wrong elements on iteration %d\n",
-        nfailures, iter);
-    } else {
-      printf("Cholesky passed validation test on iteration %d\n", iter);
+    if(sch->rank() == 0){
+      if (nfailures){
+        printf("Cholesky failed with %d wrong elements on iteration %d\n",
+          nfailures, iter);
+      } else {
+        printf("Cholesky passed validation test on iteration %d\n", iter);
+      }
     }
   }
 

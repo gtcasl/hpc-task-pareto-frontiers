@@ -361,7 +361,6 @@ int cg(int argc, char** argv)
       );
     }
     sch->run(root);
-    sch->stop();
   }
   sch->deallocateHeap();
   sch->finalize();
