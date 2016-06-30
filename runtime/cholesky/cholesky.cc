@@ -95,7 +95,7 @@ class Matrix
           lastColBlock = jBlock;
         }
         //printf("Pointer %p is %f\n", ptr, *ptr);
-        printf("%6.2f", *ptr);
+        printf("%6.2f ", *ptr);
       }
       printf("\n");
     }
@@ -328,24 +328,35 @@ int cholesky(int argc, char** argv)
   sch->allocateHeap(ncopies);
 
   for (int c=0; c < ncopies; ++c, sch->nextIter()){
-    if (sch->rank() != 1) break;
+    if (sch->rank() == 0){
 
-    for (int i=0; i < nBlocks; ++i){
-      for (int j=0; j < nBlocks; ++j){
-        L.symmetricFill(i,j);
-      }
-    }
-
-    for (int i=0; i < nBlocks; ++i){
-      for (int j=0; j <= i; ++j){
-        DoubleArray Aij = A.block(i,j);
-        for (int k=0; k < nBlocks; ++k){
-          DoubleArray Lik = L.block(i,k);
-          DoubleArray Ljk = L.block(j,k);
-          gemm(i,j,k,blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
+      for (int i=0; i < nBlocks; ++i){
+        for (int j=0; j < nBlocks; ++j){
+          L.symmetricFill(i,j);
         }
       }
+
+      for (int i=0; i < nBlocks; ++i){
+        for (int j=0; j <= i; ++j){
+          DoubleArray Aij = A.block(i,j);
+          for (int k=0; k < nBlocks; ++k){
+            DoubleArray Lik = L.block(i,k);
+            DoubleArray Ljk = L.block(j,k);
+            gemm(i,j,k,blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
+          }
+        }
+      }
+
+      // send A & L
+      MPI_Send(A.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+      MPI_Send(L.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
     }
+    if(sch->rank() == 1){
+      // recv A & L
+      MPI_Recv(A.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(L.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
   }
 
   sch->resetIter();
@@ -359,21 +370,21 @@ int cholesky(int argc, char** argv)
 
     sch->run(root);
     int nfailures = 0;
-    for (int i=0; i < nBlocks; ++i){
-      //just check the diagonal blocks...
-      //the other blocks end up weird and transposed
-      DoubleArray Aii = A.block(i,i);
-      DoubleArray Lii = L.block(i,i);
-      int nelems = blockSize * blockSize;
-      double tol = 1e-4;
-      for (int j=0; j < nelems; ++j){
-        double delta = fabs(Aii[j] - Lii[j]);
-        if (delta > tol){
-          nfailures++;
+    if(sch->rank() == 1){
+      for (int i=0; i < nBlocks; ++i){
+        //just check the diagonal blocks...
+        //the other blocks end up weird and transposed
+        DoubleArray Aii = A.block(i,i);
+        DoubleArray Lii = L.block(i,i);
+        int nelems = blockSize * blockSize;
+        double tol = 1e-4;
+        for (int j=0; j < nelems; ++j){
+          double delta = fabs(Aii[j] - Lii[j]);
+          if (delta > tol){
+            nfailures++;
+          }
         }
       }
-    }
-    if(sch->rank() == 0){
       if (nfailures){
         printf("Cholesky failed with %d wrong elements on iteration %d\n",
           nfailures, iter);

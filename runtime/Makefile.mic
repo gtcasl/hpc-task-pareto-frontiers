@@ -3,7 +3,7 @@ SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc
 HEADERS := $(shell ls *.h)
 
 CXX :=    mpiicpc
-CXXFLAGS := -fPIC -O0 -g -Wall -Wextra -mkl
+CXXFLAGS := -fPIC -O2 -g -Wall -Wextra -mkl
 #CPPFLAGS := -I. -std=c++11 -DCHOLESKY_DEBUG
 CPPFLAGS := -I. -std=c++11
 LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
