@@ -160,7 +160,7 @@ potrf(int k, int size, DoubleArray A)
     abort();
   }
   double* ptr = A;
-#pragma omp parallel for
+//#pragma omp parallel for
   for (int i=0; i < size; ++i){
     for (int j=0; j < size; ++j, ++ptr){
       if (j > i) *ptr = 0;
@@ -184,7 +184,7 @@ syrk(
     alpha, A, size,
     beta, C, size);
 
-#pragma omp parallel for
+//#pragma omp parallel for
   for (int i=0; i < size; ++i){
     for (int j=i+1; j < size; ++j){
       int toIdx = i*size + j;
@@ -355,6 +355,8 @@ int cholesky(int argc, char** argv)
       // recv A & L
       MPI_Recv(A.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
       MPI_Recv(L.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      //A.print("before");
+      //L.print("before");
     }
     MPI_Barrier(MPI_COMM_WORLD);
   }
@@ -371,6 +373,8 @@ int cholesky(int argc, char** argv)
     sch->run(root);
     int nfailures = 0;
     if(sch->rank() == 1){
+      //A.print("after");
+      //L.print("after");
       for (int i=0; i < nBlocks; ++i){
         //just check the diagonal blocks...
         //the other blocks end up weird and transposed
