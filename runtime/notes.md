@@ -1,3 +1,21 @@
+# Todo: Newest near top
+## Task power starting point
+When we schedule a task, we need to know how much power the addition of a single task will cost the runtime. That means that we consider the gradient along the pareto frontier, which gives us the configuration for the quantized decrease in power.
+
+However, these frontiers have been constructed in isolation; ie, each task is run by itself. The delta is important, but so is the absolute increase over not running the task at all (ie having zero threads running). This feeds into the energy scaling work, where we consider how much power is consumed by the device being ON, but idle.
+
+We should run the extrapolated idle power experiments to determine this baseline, so that we know how much _additional_ power is required to run the task, on top of an idle system.
+
+In addition, we need to take into consideration that baseline power consumption is always present. Perhaps we can subtract this value from the power cap, indicating the amount of power headroom we have to work with, assuming a powered on and running system? It definitely detracts from the race to idle camp, but from what I've heard, people say that they run at full power mode all the time anyway since they never know when things will be needed. This is true especially when you consider that, as it stands now, you can't really turn cores off. If this capability were possible, we'd have to work that into the model (ie, not just the dynamic power cost, but the incremental power cost to take the core out of a low power state).
+
+The so each thread may be able to do more work (sqrt may not use all the core functional units) but since it's consistent, it should scale correctly (ie, the y-intercept should be correct).
+
+We need to fix up the model data for spmv.csv, it's borked (ie, it's missing energy, power, and speedup).
+
+### Draft data
+Looks like it's about 107 W as the baseline.
+
+##
 Do I need to have a (time-based) performance model to make my scheduling decision? Would it make sense to construct some performance model, either as a best-case (ie oracle) comparison, or just as a baseline to show how much perf we give up, but how bad we blow our budget?
 
 Is there a PAPI power limitation framework for the MIC? Nope. Need to do something more ad-hoc. Similar to power steering, we set one as a baseline? Force it as best as possible, and document how far off we are.
@@ -13,7 +31,6 @@ Keep track of average power and max power (to make sure we don't blow power budg
 Use periodic interrupts to check (over a time window), log average and max.
 Report at end (in log file).
 
-## TODO
 With a power cap, it's possible that some resources go unused, since they provide little performance improvement or blow the power budget. A neat graph would show the when the runtime chooses to NOT use all the available resources, and when that decision is based on little performance improvement and when it's based on possibility of blowing the power budget.
 
 # Setting the number of threads we can use

@@ -28,6 +28,9 @@ struct cpu_set_t {};
 #endif
 
 #define NUM_THREADS 228
+// This number was found empirically using the linear regression model from
+// the energy scaling work.
+#define IDLE_POWER 106.9
 
 #define new_task(taskName, ...) \
   make_task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
@@ -169,7 +172,8 @@ class TaskRunner {
         std::getline(stst, elem, ','); // time
         times[i] = std::stod(elem);
         std::getline(stst, elem, ','); // power
-        powers[i] = std::stod(elem);
+        // subtract out the baseline for keeping the system running
+        powers[i] = std::stod(elem) - IDLE_POWER;
         std::getline(stst, elem, ','); // speedup
       }
     }
