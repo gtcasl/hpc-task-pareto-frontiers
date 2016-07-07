@@ -6,3 +6,4 @@ src/blas
 runtime/run
 run.host
 run.mic
+measure

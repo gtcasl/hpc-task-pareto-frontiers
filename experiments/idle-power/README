@@ -1,0 +1,4 @@
+# To build: 
+g++ -O2 -Wall -Wextra measure.cpp -o measure -lmkl_rt -lmicmgmt
+
+# The power log was built by repeatedly measuring the MIC power, making one measurement every quarter of a second. It was started, then separately a loop was run stressing incrementally more threads on the device (ie, 1 cpu, then 2, then on to 228). Eventually the logging was stopped after all the stress tests had completed. There might be some dead time (with no stresses running) on either end of the log. All the stress test does is run sqrt(rand()) continuously.
