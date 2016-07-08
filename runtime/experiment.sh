@@ -14,7 +14,7 @@ do
     #done
     #./cg.sh
     ./cholesky.sh
-    #tail -n 3 scheduler.cg.log >> cg.none.log
-    tail -n 3 scheduler.cholesky.log >> cholesky.none.log
+    #tail -n 3 scheduler.cg.log >> cg.base.log
+    tail -n 3 scheduler.cholesky.log >> cholesky.base.log
 done
 
