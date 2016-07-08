@@ -1,12 +1,17 @@
 #!/bin/bash
 
-nthreads=228
-powerlimit=109
+#export NUMTHREADS=228
+#export POWERLIMIT=110
 
-#cg
-POWERLIMIT=$powerlimit NUMTHREADS=$nthreads ./go.sh 6 cg 150 150 150 2
-mv scheduler.log scheduler.cg.log
+./cg.sh
+./cholesky.sh
+tail -n 3 scheduler.cg.log > cg.power.log
+tail -n 3 scheduler.cholesky.log > cholesky.power.log
 
-#cholesky
-POWERLIMIT=$powerlimit NUMTHREADS=$nthreads ./go.sh 17 cholesky 4 64
-mv scheduler.log scheduler.cholesky.log
+for x in 1 5 10 20 30 40 50 60
+do
+    POWERLIMIT=$x ./cg.sh
+    POWERLIMIT=$x ./cholesky.sh
+    tail -n 3 scheduler.cg.log >> cg.power.log
+    tail -n 3 scheduler.cholesky.log >> cholesky.power.log
+done
