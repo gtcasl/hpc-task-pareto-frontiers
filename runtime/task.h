@@ -155,15 +155,16 @@ class TaskRunner {
   static void store(int id, TaskRunner* r, const char* name){
     runners_[id] = r;
     names_[id] = name;
-    std::vector<double> times(NUM_THREADS, 0.0);
-    std::vector<double> powers(NUM_THREADS, 0.0);
+    std::vector<double> times(NUM_THREADS + 1, 0.0);
+    times[0] = std::numeric_limits<double>::infinity();
+    std::vector<double> powers(NUM_THREADS + 1, 0.0);
     std::string sname = name;
     sname += ".csv";
     std::ifstream ifs{sname};
     if(ifs.good()){
       std::string line;
       std::getline(ifs, line); // kill header
-      for(int i = 0; i < NUM_THREADS; ++i){
+      for(int i = 1; i < NUM_THREADS + 1; ++i){
         std::getline(ifs, line); 
         std::stringstream stst{line};
         std::string elem;
@@ -181,8 +182,7 @@ class TaskRunner {
     powers_[id] = powers;
     auto min = std::min_element(std::begin(times), std::end(times));
     min_times_[id] = *min;
-    // if times[0] is fastest, only need 1 thread
-    min_threads_[id] = std::distance(std::begin(times), min) + 1;
+    min_threads_[id] = std::distance(std::begin(times), min);
   }
 
   static TaskRunner* get(int id){

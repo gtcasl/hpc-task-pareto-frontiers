@@ -15,10 +15,10 @@ std::map<int,std::vector<double> > TaskRunner::powers_;
 
 int TaskRunner::get_next_least_powerful_num_threads(int id,
                                                     int cur_num_threads) {
-  double cur_power = powers_[id][cur_num_threads - 1];
+  double cur_power = powers_[id][cur_num_threads];
   int new_num_threads = cur_num_threads;
   for(; new_num_threads > 0; --new_num_threads){
-    if(powers_[id][new_num_threads - 1] < cur_power){
+    if(powers_[id][new_num_threads] < cur_power){
       return new_num_threads;
     }
   }

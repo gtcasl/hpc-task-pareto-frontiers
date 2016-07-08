@@ -1,4 +1,7 @@
 # Todo: Newest near top
+DONE: Need to fix the scheduler so that if it can't find a task (due to power budget), we drop a task entirely.
+Also need to change how the pareto frontier is passed. Currently nothing is ordered, and we add a config for each number of threads. Perhaps this should be somehow ordered differently (ie, sorted).
+
 ## Task power starting point
 When we schedule a task, we need to know how much power the addition of a single task will cost the runtime. That means that we consider the gradient along the pareto frontier, which gives us the configuration for the quantized decrease in power.
 
@@ -8,7 +11,7 @@ We should run the extrapolated idle power experiments to determine this baseline
 
 In addition, we need to take into consideration that baseline power consumption is always present. Perhaps we can subtract this value from the power cap, indicating the amount of power headroom we have to work with, assuming a powered on and running system? It definitely detracts from the race to idle camp, but from what I've heard, people say that they run at full power mode all the time anyway since they never know when things will be needed. This is true especially when you consider that, as it stands now, you can't really turn cores off. If this capability were possible, we'd have to work that into the model (ie, not just the dynamic power cost, but the incremental power cost to take the core out of a low power state).
 
-The so each thread may be able to do more work (sqrt may not use all the core functional units) but since it's consistent, it should scale correctly (ie, the y-intercept should be correct).
+The each thread may be able to do more work (sqrt may not use all the core functional units) but since it's consistent, it should scale correctly (ie, the y-intercept should be correct).
 
 We need to fix up the model data for spmv.csv, it's borked (ie, it's missing energy, power, and speedup).
 

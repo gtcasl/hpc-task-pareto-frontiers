@@ -271,7 +271,7 @@ class Logger{
     }
     
     void log(){
-      logfile_ << "\n";
+      logfile_ << std::endl;
     }
 
     template<class T, class U, class... Ts>
@@ -288,8 +288,9 @@ AdvancedScheduler::runMaster(Task* root)
    * ie, out of power, out of cores, could use more cores, etc
    */
   Logger logger{"scheduler.log"};
-  logger.log("message", "setting maximum number of threads",
-             "nthreads", numAvailableCores());
+  logger.log("message", "cataloging configuration",
+             "power_limit", power_limit_,
+             "max_threads", numAvailableCores());
 
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0
@@ -348,7 +349,7 @@ AdvancedScheduler::runMaster(Task* root)
         for(const auto& cpu : taskCpuAssignments[t]){
           returnCpu(cpu);
         }
-        available_power_ += TaskRunner::get_powers(t->typeID())[nthreads - 1];
+        available_power_ += TaskRunner::get_powers(t->typeID())[nthreads];
         taskCpuAssignments[t].clear();
       }
     }
@@ -384,7 +385,7 @@ AdvancedScheduler::runMaster(Task* root)
         if(task_thread_assignments[t] != 0){
           est_makespan = t->estimateTime() -
             TaskRunner::get_min_time(t->typeID()) +
-            TaskRunner::get_times(t->typeID())[task_thread_assignments[t] - 1];
+            TaskRunner::get_times(t->typeID())[task_thread_assignments[t]];
         }
         est_makespans[t] = est_makespan;
       }
@@ -413,12 +414,12 @@ AdvancedScheduler::runMaster(Task* root)
         if(task_thread_assignments[min] != 0){
           est_makespans[min] = min->estimateTime() -
             TaskRunner::get_min_time(min->typeID()) +
-            TaskRunner::get_times(min->typeID())[task_thread_assignments[min] - 1];
+            TaskRunner::get_times(min->typeID())[task_thread_assignments[min]];
         }
         if(task_thread_assignments[max] != 0){
           est_makespans[max] = max->estimateTime() -
             TaskRunner::get_min_time(max->typeID()) +
-            TaskRunner::get_times(max->typeID())[task_thread_assignments[max] - 1];
+            TaskRunner::get_times(max->typeID())[task_thread_assignments[max]];
         }
         Task* new_min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
                                          [](const std::pair<Task*,double>& a,
@@ -446,7 +447,7 @@ AdvancedScheduler::runMaster(Task* root)
       int sum_p = 0;
       for(const auto& t : pendingTasks){
         if(task_thread_assignments[t] != 0){
-          sum_p += TaskRunner::get_powers(t->typeID())[task_thread_assignments[t] - 1];
+          sum_p += TaskRunner::get_powers(t->typeID())[task_thread_assignments[t]];
         }
       }
       if(sum_p > available_power_){
@@ -459,26 +460,23 @@ AdvancedScheduler::runMaster(Task* root)
           // time goes up, power goes down
           Task* losing_task = nullptr;
           int new_threads;
-          double delta_t{0.0};
+          double delta_t{std::numeric_limits<double>::infinity()};
           double delta_p;
           for(const auto& t : pendingTasks){
             int old_t = task_thread_assignments[t];
             int new_t = TaskRunner::get_next_least_powerful_num_threads(t->typeID(),
                                                                         old_t);
-            double old_time = TaskRunner::get_times(t->typeID())[old_t - 1];
-            double new_time = TaskRunner::get_times(t->typeID())[new_t - 1];
-            if(new_time - old_time < delta_t){
-              double old_p = TaskRunner::get_powers(t->typeID())[old_t - 1];
-              double new_p = TaskRunner::get_powers(t->typeID())[new_t - 1];
+            double old_time = TaskRunner::get_times(t->typeID())[old_t];
+            double new_time = TaskRunner::get_times(t->typeID())[new_t];
+            if((new_time == std::numeric_limits<double>::infinity()) ||
+               (new_time - old_time < delta_t)){
+              double old_p = TaskRunner::get_powers(t->typeID())[old_t];
+              double new_p = TaskRunner::get_powers(t->typeID())[new_t];
               losing_task = t;
               new_threads = new_t;
               delta_t = new_time - old_time;
               delta_p = new_p - old_p;
             }
-          }
-          std::cout << "losing: " << losing_task << std::endl;
-          for(const auto& t : pendingTasks){
-            std::cout << "pending: " << t << std::endl;
           }
           assert(losing_task != nullptr && "Error: Unable to find a losing task");
           assert((new_threads == 0 ||
@@ -498,6 +496,7 @@ AdvancedScheduler::runMaster(Task* root)
       }
 
       available_power_ -= sum_p;
+      assert(available_power_ >= 0 && "Error: trying to schedule with more power than we have available");
 
       if(increment_tick){
         ++tick_number;
