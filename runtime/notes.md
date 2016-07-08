@@ -1,6 +1,9 @@
 # Todo: Newest near top
-DONE: Need to fix the scheduler so that if it can't find a task (due to power budget), we drop a task entirely.
+We need to figure out a good baseline. The `BasicScheduler` currently only issues a single thread per task, which might not make a lot of sense. Perhaps we need a modified version of the `AdvancedScheduler` that does everything except for the power-aware modifications (ie, it only uses the existing thread-aware scheduler).
+
 Also need to change how the pareto frontier is passed. Currently nothing is ordered, and we add a config for each number of threads. Perhaps this should be somehow ordered differently (ie, sorted).
+
+DONE: Need to fix the scheduler so that if it can't find a task (due to power budget), we drop a task entirely.
 
 ## Task power starting point
 When we schedule a task, we need to know how much power the addition of a single task will cost the runtime. That means that we consider the gradient along the pareto frontier, which gives us the configuration for the quantized decrease in power.

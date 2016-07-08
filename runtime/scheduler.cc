@@ -565,6 +565,10 @@ AdvancedScheduler::runMaster(Task* root)
 void
 BasicScheduler::runMaster(Task* root)
 {
+  Logger logger{"scheduler.log"};
+  logger.log("message", "cataloging configuration",
+             "max_threads", numAvailableCores());
+
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0
     availableWorkers.push_back(i);
@@ -572,10 +576,29 @@ BasicScheduler::runMaster(Task* root)
 
   std::list<Task*> runningTasks;
   std::list<Task*> pendingTasks;
+  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
 
-  root->run(0,0); //run the first task on worker 0
-  runningTasks.push_back(root);
-  while (!runningTasks.empty()){
+  // initialize power measurement on this rank
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    logger.log("error", "Unable to set up signal handler");
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  double start_time = getTime();
+
+  int tick_number = 0;
+
+  pendingTasks.push_back(root);
+  do{
     std::list<Task*>::iterator tmp,
       it = runningTasks.begin(),
       end = runningTasks.end();
@@ -583,25 +606,181 @@ BasicScheduler::runMaster(Task* root)
       tmp = it++;
       Task* t = *tmp;
       if (t->checkDone()){
+        // read back the elapsed time from the runner and log to file
+        double elapsed_seconds;
+        int nthreads;
+        MPI_Recv(&elapsed_seconds, 1, MPI_DOUBLE, t->worker() + 1, 0,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&nthreads, 1, MPI_INT, t->worker() + 1, 0,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        double start_time = t->getStartTime();
+        logger.log("end_task", "",
+                   "name", TaskRunner::get_name(t->typeID()),
+                   "start_time", start_time,
+                   "elapsed_seconds", elapsed_seconds,
+                   "nthreads", nthreads,
+                   "released_listeners", t->getNumListeners());
         availableWorkers.push_front(t->worker());
         runningTasks.erase(tmp);
         t->clearListeners(pendingTasks);
+        for(const auto& cpu : taskCpuAssignments[t]){
+          returnCpu(cpu);
+        }
+        available_power_ += TaskRunner::get_powers(t->typeID())[nthreads];
+        taskCpuAssignments[t].clear();
       }
     }
 
-    while (!pendingTasks.empty()){
-      if (availableWorkers.empty()){
-        break;
+    bool increment_tick = true;
+    if(!pendingTasks.empty()){
+
+      std::map<Task*,int> task_thread_assignments;
+      int sum_s = 0;
+      for(const auto& t : pendingTasks){
+        int minthreads = TaskRunner::get_min_threads(t->typeID());
+        task_thread_assignments[t] = minthreads;
+        sum_s += minthreads;
+      }
+      if(sum_s > numAvailableCores()){
+        logger.log("message", "Scaling desired threads to those available");
+        for(auto& s : task_thread_assignments){
+          s.second = std::floor((double)numAvailableCores() / sum_s * s.second);
+        }
+      }else{
+        logger.log("message", "Enough threads to go around");
       }
 
-      int worker = availableWorkers.front(); 
-      availableWorkers.pop_front();
+      // Shuffle threads around until we minimize makespan
+      std::map<Task*,double> est_makespans;
+      for(const auto& t : pendingTasks){
+        // Estimate the longest time from this task to completion of the DAG.
+        // estimateTime uses the best possible exec time for each task on longest
+        // path, including this task, so we have to subtract it out and in its
+        // place use the actual predicted execution time for this task with the 
+        // number of cores it has been assigned.
+        double est_makespan = std::numeric_limits<double>::infinity();
+        if(task_thread_assignments[t] != 0){
+          est_makespan = t->estimateTime() -
+            TaskRunner::get_min_time(t->typeID()) +
+            TaskRunner::get_times(t->typeID())[task_thread_assignments[t]];
+        }
+        est_makespans[t] = est_makespan;
+      }
+      Task* min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
+                                   [](const std::pair<Task*,double>& a,
+                                      const std::pair<Task*,double>& b){
+                                   return a.second < b.second;
+                                   })->first;
+      Task* max = std::max_element(std::begin(est_makespans), std::end(est_makespans),
+                                   [](const std::pair<Task*,double>& a,
+                                      const std::pair<Task*,double>& b){
+                                   return a.second < b.second;
+                                   })->first;
+      double min_makespan = est_makespans[max];
+      while(1){
+        if(min == max){
+          break;
+        }
+        if(task_thread_assignments[min] == 0){
+          break;
+        }
+        --task_thread_assignments[min];
+        ++task_thread_assignments[max];
+        est_makespans[min] = std::numeric_limits<double>::infinity();
+        est_makespans[max] = std::numeric_limits<double>::infinity();
+        if(task_thread_assignments[min] != 0){
+          est_makespans[min] = min->estimateTime() -
+            TaskRunner::get_min_time(min->typeID()) +
+            TaskRunner::get_times(min->typeID())[task_thread_assignments[min]];
+        }
+        if(task_thread_assignments[max] != 0){
+          est_makespans[max] = max->estimateTime() -
+            TaskRunner::get_min_time(max->typeID()) +
+            TaskRunner::get_times(max->typeID())[task_thread_assignments[max]];
+        }
+        Task* new_min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
+                                         [](const std::pair<Task*,double>& a,
+                                            const std::pair<Task*,double>& b){
+                                             return a.second < b.second;
+                                         })->first;
+        Task* new_max = std::max_element(std::begin(est_makespans), std::end(est_makespans),
+                                         [](const std::pair<Task*,double>& a,
+                                            const std::pair<Task*,double>& b){
+                                             return a.second < b.second;
+                                         })->first;
+        // new config is not an improvement
+        if(est_makespans[new_max] >= min_makespan){
+          ++task_thread_assignments[min];
+          --task_thread_assignments[max];
+          break;
+        }
 
-      Task* t = pendingTasks.front();
-      pendingTasks.pop_front();
+        // replace min/max/min_makespan
+        min = new_min;
+        max = new_max;
+        min_makespan = est_makespans[max];
+      }
 
-      t->run(worker,0);
-      runningTasks.push_back(t);
+      if(increment_tick){
+        ++tick_number;
+        increment_tick = false;
+      }
+      /*
+       * For each pending task,
+       * if task_thread_assignments[task] == 0, continue
+       * else
+       * remove task from pendingTasks
+       * assign it task_thread_assignments[task] threads
+       * pop a worker
+       * run task on worker
+       * add task to runningTasks
+       */
+      auto task_it = std::begin(pendingTasks);
+      while(task_it != std::end(pendingTasks)){
+        Task* task = *task_it;
+        auto removed = task_it++;
+        if(task_thread_assignments[task] == 0){
+          logger.log("message", "Attempting to schedule task with zero threads",
+                     "task", TaskRunner::get_name(task->typeID()),
+                     "tick", tick_number);
+          continue;
+        }
+        assert(!availableWorkers.empty() && 
+          "ERROR: Attempting to schedule without enough workers. Use more.");
+        pendingTasks.erase(removed);
+        // assign task_thread_assignments[task] threads
+        for(int i = 0; i < task_thread_assignments[task]; ++i){
+          // get an available cpu
+          int cpu = claimCpu();
+          // add it to the task
+          task->addCpu(cpu);
+          taskCpuAssignments[task].insert(cpu);
+        }
+        logger.log("start_task", "",
+                   "name", TaskRunner::get_name(task->typeID()),
+                   "tick", tick_number,
+                   "start_time", getTime(),
+                   "nthreads", task_thread_assignments[task]);
+        int worker = availableWorkers.front(); 
+        availableWorkers.pop_front();
+        task->run(worker, tick_number);
+        runningTasks.push_back(task);
+      }
     }
-  }
+  } while (!runningTasks.empty());
+
+  double end_time = getTime();
+  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  logger.log("average_power_W", avg_power_W);
+  logger.log("max_power_W", max_power_ / 1000000.0);
+  logger.log("time_s", end_time - start_time);
 }
