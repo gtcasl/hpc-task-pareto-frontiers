@@ -13,7 +13,7 @@ class BufferBase
 {
  public:
   size_t mmap_offset;
-  int nelems;
+  long nelems;
   void* buffer;
 };
 
@@ -159,14 +159,14 @@ class Scheduler
 template <class T>
 class Buffer : public BufferBase {
  public:
-  Buffer(int n) {
+  Buffer(long n) {
     nelems = n;
     mmap_offset = 0;
     buffer = 0;
     Scheduler::global->addNeededBuffer(this, n*sizeof(T));
   }
 
-  Buffer(int n, int offset)
+  Buffer(long n, long offset)
   {
     mmap_offset = offset;
     buffer = 0;
@@ -185,7 +185,7 @@ class Buffer : public BufferBase {
   }
 
   T&
-  operator[](int idx){
+  operator[](long idx){
     T* buf = (T*) buffer;
     return buf[idx];
   }
@@ -197,7 +197,7 @@ class Buffer : public BufferBase {
   }
 
   Buffer<T>
-  offset(int off) const {
+  offset(long off) const {
     Buffer<T> newbuf(nelems, mmap_offset + off*sizeof(T));
     T* relocatedBuf = (T*) Scheduler::global->relocatePointer(mmap_offset);
     newbuf.buffer = (relocatedBuf + off);
@@ -205,7 +205,7 @@ class Buffer : public BufferBase {
   }
 
   const T&
-  operator[](int idx) const {
+  operator[](long idx) const {
     const T* buf = (const T*) buffer;
     return buf[idx];
   }
@@ -231,7 +231,11 @@ class AdvancedScheduler : public Scheduler
   void runMaster(Task* root);
 };
 
-
+class ProfilingScheduler : public Scheduler
+{
+  public:
+    void runMaster(Task* root);
+};
 
 #endif
 

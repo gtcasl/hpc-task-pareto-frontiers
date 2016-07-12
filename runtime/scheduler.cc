@@ -291,6 +291,7 @@ AdvancedScheduler::runMaster(Task* root)
   logger.log("message", "cataloging configuration",
              "power_limit", power_limit_,
              "max_threads", numAvailableCores());
+  std::cout << "Starting execution" << std::endl;
 
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0
@@ -560,6 +561,107 @@ AdvancedScheduler::runMaster(Task* root)
   logger.log("average_power_W", avg_power_W);
   logger.log("max_power_W", max_power_ / 1000000.0);
   logger.log("time_s", end_time - start_time);
+}
+
+
+void ProfilingScheduler::runMaster(Task* root)
+{
+  int iter_num_threads = numAvailableCores();
+  Logger logger{"profile.log"};
+  logger.log("message", "profiling all tasks",
+             "max_threads", iter_num_threads);
+  std::cout << "Starting execution" << std::endl;
+
+  std::list<Task*> runningTasks;
+  std::list<Task*> pendingTasks;
+
+  // initialize power measurement on this rank
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    logger.log("error", "Unable to set up signal handler");
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  double start_time = getTime();
+
+  cumulative_power_ = 0;
+  num_power_samples_ = 0;
+
+  pendingTasks.push_back(root);
+  do{
+    std::list<Task*>::iterator tmp,
+      it = runningTasks.begin(),
+      end = runningTasks.end();
+    while (it != end){
+      tmp = it++;
+      Task* t = *tmp;
+      if (t->checkDone()){
+        // read back the elapsed time from the runner and log to file
+        double elapsed_seconds;
+        int nthreads;
+        MPI_Recv(&elapsed_seconds, 1, MPI_DOUBLE, t->worker() + 1, 0,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&nthreads, 1, MPI_INT, t->worker() + 1, 0,
+                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        double start_time = t->getStartTime();
+        double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+        logger.log("end_task", "",
+                   "name", TaskRunner::get_name(t->typeID()),
+                   "start_time", start_time,
+                   "elapsed_seconds", elapsed_seconds,
+                   "nthreads", nthreads,
+                   "avg_power_W", avg_power_W,
+                    "max_power_W", max_power_ / 1000000.0,
+                   "released_listeners", t->getNumListeners());
+        runningTasks.erase(tmp);
+        t->clearListeners(pendingTasks);
+      }
+    }
+
+    if(!pendingTasks.empty() && runningTasks.empty()){
+      /*
+       * For each pending task,
+       * if task_thread_assignments[task] == 0, continue
+       * else
+       * remove task from pendingTasks
+       * assign it task_thread_assignments[task] threads
+       * pop a worker
+       * run task on worker
+       * add task to runningTasks
+       */
+      Task* task = *std::begin(pendingTasks);
+      pendingTasks.pop_front();
+      for(int i = 0 ; i < iter_num_threads; ++i){
+        task->addCpu(i);
+      }
+      logger.log("start_task", "",
+                 "name", TaskRunner::get_name(task->typeID()),
+                 "start_time", getTime(),
+                 "nthreads", iter_num_threads);
+      max_power_ = 0;
+      cumulative_power_ = 0;
+      num_power_samples_ = 0;
+      task->run(0, 0);
+      runningTasks.push_back(task);
+    }
+  } while (!runningTasks.empty());
+
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
 }
 
 void

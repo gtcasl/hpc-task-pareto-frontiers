@@ -1,5 +1,18 @@
 # Todo: Newest near top
-We need to figure out a good baseline. The `BasicScheduler` currently only issues a single thread per task, which might not make a lot of sense. Perhaps we need a modified version of the `AdvancedScheduler` that does everything except for the power-aware modifications (ie, it only uses the existing thread-aware scheduler).
+So the tasks don't run with different sizes, they just run with different behaviors. This may be due to having data already loaded in the cache, or by another process. Meaning, most of the time the first iteration of a task is way slower than everything after it.
+
+_THE GRANULARITY IS TOO SMALL FOR THESE TASKS._ It's impossible to measure individual task execution, and the variance is too high (for example, the empty start task has runtime proportional to the max number of threads, even though nothing even happens).
+
+Maybe we can take the frontiers we have and run with it. We'll just need to come up with power numbers, which might require using our existing frontiers or by running each task a bunch of times to get avg power numbers. Although that's not as good as peak power, but I guess if we run the tasks over and over enough, that should be fine.
+
+I don't get what's going on. I need to have tasks that run in a reasonable amount of time (~seconds), but not slower than that. Which either means massive problem sizes, or many iterations of the same kernel over and over. How would that work with the dag? I wouldn't really be able to rerun the same task over and over, that doesn't make a ton of sense (unless we do it the same number of iterations for each task? i.e., artificially increase the number of iterations by some shared ratio to make them run longer).
+
+It's also the case that these tasks have execution time and power consumption proportional to the input size, which is not constant across executions (for example, multiple `gemm` calls in `cholesky` with different input sizes). Do we need to make a unique frontier for each input size we run into? Do we need to come up with some other method for modeling the power/performance relationships that comprise the frontiers? This should kind of be my work already I guess. 
+
+Most of these cg tasks are still pretty short-running (milliseconds). Perhaps we should make the problem size much bigger?
+Still fucked. Giving more threads to SPMV makes it slower. What?
+
+DONE: We need to figure out a good baseline. The `BasicScheduler` currently only issues a single thread per task, which might not make a lot of sense. Perhaps we need a modified version of the `AdvancedScheduler` that does everything except for the power-aware modifications (ie, it only uses the existing thread-aware scheduler).
 
 Also need to change how the pareto frontier is passed. Currently nothing is ordered, and we add a config for each number of threads. Perhaps this should be somehow ordered differently (ie, sorted).
 

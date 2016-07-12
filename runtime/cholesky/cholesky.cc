@@ -296,7 +296,8 @@ int cholesky(int argc, char** argv)
 {
   //ALWAYS Initialize the scheduler first
   //Scheduler* sch = new BasicScheduler;
-  Scheduler* sch = new AdvancedScheduler;
+  //Scheduler* sch = new AdvancedScheduler;
+  Scheduler* sch = new ProfilingScheduler;
   sch->init(argc, argv);
   // disable dynamic thread adjustment in MKL
 #ifndef no_mkl
