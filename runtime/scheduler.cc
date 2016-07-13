@@ -103,9 +103,9 @@ Scheduler::allocateHeap(int ncopies)
   ncopies_ = ncopies;
   mmap_size_ = total_buffer_size_ * ncopies;
 
-  int fd;
+  int fd = -1;
   if(rank_ == 0 || rank_ == 1){
-    int res = shm_unlink(mmap_fname);
+    shm_unlink(mmap_fname);
     fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
     if(fd < 0){
       error("invalid fd %d shm_open on %s: error=%d: rank %d\n",
@@ -460,9 +460,9 @@ AdvancedScheduler::runMaster(Task* root)
           // losing task: Task*, #threads, delta t, delta p
           // time goes up, power goes down
           Task* losing_task = nullptr;
-          int new_threads;
+          int new_threads = -1;
           double delta_t{std::numeric_limits<double>::infinity()};
-          double delta_p;
+          double delta_p = 0;
           for(const auto& t : pendingTasks){
             int old_t = task_thread_assignments[t];
             int new_t = TaskRunner::get_next_least_powerful_num_threads(t->typeID(),
@@ -589,8 +589,6 @@ void ProfilingScheduler::runMaster(Task* root)
   work_time.it_interval.tv_sec = 0;
   work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
   setitimer(ITIMER_REAL, &work_time, NULL);
-
-  double start_time = getTime();
 
   cumulative_power_ = 0;
   num_power_samples_ = 0;

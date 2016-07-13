@@ -2,9 +2,9 @@
 
 typedef Buffer<double> DoublePtr;
 
-static enum fxn_id {
+enum fxn_id {
   my_ddot_id = 0
-} test_ids;
+};
 
 void my_ddot(int n, Buffer<double> a, Buffer<double> b, Buffer<double> c)
 {

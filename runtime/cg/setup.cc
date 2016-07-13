@@ -1,4 +1,5 @@
 #include <cg/types.h>
+#include <iostream>
 
 typedef Buffer<double> DoublePtr;
 typedef Buffer<double> DoubleArray;
@@ -7,7 +8,7 @@ typedef Buffer<IntArray> IntChunkArray;
 typedef Buffer<DoubleArray> DoubleChunkArray;
 
 inline int
-index(int ix, int iy, int iz, int nx, int ny, int nz){
+index(int ix, int iy, int iz, int, int ny, int nz){
   return ix*ny*nz + iy*nz + iz;
 }
 
@@ -28,15 +29,10 @@ generate_problem_27pt(
   DoubleArray A,
   IntArray nonzeros,
   IntArray nnzPerRow,
-  DoubleChunkArray bChunks,
-  DoubleChunkArray xChunks,
   DoubleChunkArray AChunks,
   IntChunkArray    nonzerosChunks
 )
 {
-  int nrows = nx*ny*nz;
-  int ncols = nrows;
-
 
   int offset = 0;
   int nextChunk = 0;

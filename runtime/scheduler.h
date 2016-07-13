@@ -100,12 +100,6 @@ class Scheduler
     }
 #endif
   }
-  long long cumulative_power_;
-  long num_power_samples_;
-  uint32_t max_power_;
-  uint32_t power_limit_; // I think the default of 350 is way above the TDP
-  uint32_t available_power_; // amount of power that can be used at the moment
-
  private:
   void addNeededBuffer(BufferBase* buf, size_t size);
 
@@ -154,6 +148,14 @@ class Scheduler
 #ifndef no_miclib
   struct mic_device* mic_device_;
 #endif
+ protected:
+  long long cumulative_power_;
+  long num_power_samples_;
+  uint32_t max_power_;
+  uint32_t power_limit_; // I think the default of 350 is way above the TDP
+  int32_t available_power_; // amount of power that can be used at the moment
+
+
 };
 
 template <class T>

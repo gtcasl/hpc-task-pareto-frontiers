@@ -290,7 +290,6 @@ class TaskRunner_impl : public TaskRunner
     }
     auto theTask = static_cast<TaskType*>(t);
     theTask->setup();
-    int cores = t->cpuCount();
     theTask->run();
     theTask->notifyDone();
   }
@@ -319,12 +318,13 @@ registerFunction(typename myFxnTraits::Fxn f, int id, const char* name){
 
 #define RegisterTask(fxn,ret,...) \
   typedef impl::FxnTraits<ret,__VA_ARGS__> type_traits_##fxn; \
-  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id,#fxn);
+  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id,#fxn); \
+  (void)ignore_##fxn;
   
 
 template <typename Fxn, typename... Args>
 Task*
-make_task(Fxn f, int id, const std::tuple<Args...>& t){
+make_task(Fxn, int id, const std::tuple<Args...>& t){
   return new impl::Task_tmpl<Fxn,Args...>(t,id);
 }
 

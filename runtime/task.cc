@@ -26,11 +26,12 @@ int TaskRunner::get_next_least_powerful_num_threads(int id,
 }
 
 Task::Task(int mySize, int typeID) :  
-  nthread_(0),
-  cpu_state_(0),
-  done_(false),
   mySize_(mySize),
-  typeID_(typeID)
+  cpu_state_(0),
+  nthread_(0),
+  typeID_(typeID),
+  worker_(0),
+  done_(false)
 {
   CPU_ZERO(&cpumask_);
 }

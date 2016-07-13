@@ -33,7 +33,7 @@ struct config
   }
 };
 
-static enum fxn_id {
+enum fxn_id {
   myddot_id,
   start_id,
   mydaxpy_id,
@@ -44,7 +44,7 @@ static enum fxn_id {
   comp_alpha_id,
   comp_beta_id,
   assign_id
-} test_ids;
+};
 
 extern void
 generate_problem_27pt(
@@ -53,8 +53,6 @@ generate_problem_27pt(
   DoubleArray A,
   IntArray nonzeros,
   IntArray nnzPerRow,
-  DoubleChunkArray bChunks,
-  DoubleChunkArray xChunks,
   DoubleChunkArray AChunks,
   IntChunkArray    nonzerosChunks
 );
@@ -150,7 +148,7 @@ void assign(DoublePtr dst, DoublePtr src)
 }
 
 
-void start(int ignore)
+void start(int)
 {
   debug(start start);
   //no op for organizational purposes
@@ -159,10 +157,7 @@ void start(int ignore)
 
 Task*
 initDag(config cfg,
-  DoubleArray A,
-  DoubleArray Ap,
   DoubleArray p,
-  DoubleArray r,
   DoubleArray x,
   DoubleArray pApContribs,
   DoubleArray RsqContribs,
@@ -282,8 +277,8 @@ int cg(int argc, char** argv)
   int nnz_per_row = 27;
   int nchunks = atoi(argv[5]);
   cfg.nchunks = nchunks;
-  cfg.nnz_per_row = nrows;
-  cfg.nrows = nx*ny*nz;
+  cfg.nnz_per_row = nnz_per_row;
+  cfg.nrows = nrows;
   cfg.ncols = cfg.nrows;
   cfg.niter = 1;
   cfg.nrows_per_chunk = nrows / nchunks;
@@ -331,7 +326,7 @@ int cg(int argc, char** argv)
       rChunks[i] = r.offset(i*chunkSize);
       nnzPerRowChunks[i] = nnzPerRow.offset(i*chunkSize);
     }
-    generate_problem_27pt(nx,ny,nz,chunkSize,A,nonzeros,nnzPerRow,bChunks,xChunks,AChunks,nonzerosChunks);
+    generate_problem_27pt(nx,ny,nz,chunkSize,A,nonzeros,nnzPerRow,AChunks,nonzerosChunks);
   }
 
   for (int i=0; i < ncopies; ++i, sch->nextIter()){
@@ -339,7 +334,7 @@ int cg(int argc, char** argv)
     Task* root = 0;
     if (sch->rank() == 0){
       root = initDag(cfg,
-        A, Ap, p, r, x, //full arrays
+        p, x, //full arrays
         pApContribs, RsqContribs, //reduction arrays
         Alpha, Beta, pAp, Rsq, RsqNextIter, //double pointers
         AChunks, ApChunks, bChunks, pChunks, rChunks, xChunks, //double chunk arrays,

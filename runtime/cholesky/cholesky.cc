@@ -11,12 +11,12 @@
 #define task_debug(...) 
 #endif
 
-static enum fxn_id {
+enum fxn_id {
   potrf_id,
   gemm_id,
   syrk_id,
   trsm_id,
-} test_ids;
+} ;
 
 typedef Buffer<double> DoublePtr;
 typedef Buffer<double> DoubleArray;
@@ -128,15 +128,15 @@ class Matrix
 };
 
 void
-trsm(int k, int m, int size, DoubleArray A, DoubleArray B)
+trsm(int /*k*/, int /*m*/, int size, DoubleArray A, DoubleArray B)
 {
   task_debug("Solving TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
   //solve AX = B
   //B overwrriten with X
-  char side = 'R';
-  char uplo = 'U';
-  char trans = 'N';
-  char diag = 'N';
+  //char side = 'R';
+  //char uplo = 'U';
+  //char trans = 'N';
+  //char diag = 'N';
   double alpha = 1.0;
   cblas_dtrsm(CblasColMajor, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit,
     size, size, alpha,
@@ -145,7 +145,7 @@ trsm(int k, int m, int size, DoubleArray A, DoubleArray B)
 }
 
 void
-potrf(int k, int size, DoubleArray A)
+potrf(int /*k*/, int size, DoubleArray A)
 {
   task_debug("Running POTRF A(%d,%d)\n", k, k);
   //std::cout << A << std::endl;
@@ -170,7 +170,7 @@ potrf(int k, int size, DoubleArray A)
 
 void
 syrk(
-  int k, int n,
+  int /*k*/, int /*n*/,
   int size,
   bool trans,
   double alpha, 
@@ -196,7 +196,7 @@ syrk(
 
 void
 gemm(
-  int m, int n, int k,
+  int /*m*/, int /*n*/, int /*k*/,
   int size,
   bool ltrans, 
   bool rtrans,
@@ -224,8 +224,8 @@ class TaskMap {
     return tasks_[offset];
   }
  private:
-  std::vector<Task*> tasks_;
   int size_;
+  std::vector<Task*> tasks_;
 };
 
 Task*
@@ -286,11 +286,6 @@ initDag(Matrix& A)
   }
   return root;
 }
-
-void fill(int nBlocks, int blockSize, Matrix& L, Matrix& A)
-{
-}
-
 
 int cholesky(int argc, char** argv)
 {

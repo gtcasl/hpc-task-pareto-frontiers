@@ -1,5 +1,15 @@
 # Todo: Newest near top
-So the tasks don't run with different sizes, they just run with different behaviors. This may be due to having data already loaded in the cache, or by another process. Meaning, most of the time the first iteration of a task is way slower than everything after it.
+```
+    array[buffers]:
+        each buf points to a location at an offset within the actual thing.
+        we just need to know the offset, send that, and have it create a new buff from offset()
+        do we have to do that for everyone? ie each thread? or does the voodoo happen with shmem? I think we have to send to everyone
+```
+Why am I doing this? To make experiments faster?
+
+For `ddot`, even though the hand-tuned version runs an order of magnitude slower, it doesn't have as high a relative degree of variability in performance. I still think this is due to the tasks running too quickly.
+
+So the tasks don't run with different sizes, they just run with different behaviors. This may be due to having data already loaded in the cache, or by another process. Meaning, most of the time the first iteration of a task is way slower than everything after it. NOPE: it's because `SPMV` has a variable amount of work depending on the sparseness, which is data dependent. The second time around, the matrix is different, which means that the total number of flops changes. This results in fewer total operations.
 
 _THE GRANULARITY IS TOO SMALL FOR THESE TASKS._ It's impossible to measure individual task execution, and the variance is too high (for example, the empty start task has runtime proportional to the max number of threads, even though nothing even happens).
 
