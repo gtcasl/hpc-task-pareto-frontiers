@@ -499,10 +499,6 @@ AdvancedScheduler::runMaster(Task* root)
       available_power_ -= sum_p;
       assert(available_power_ >= 0 && "Error: trying to schedule with more power than we have available");
 
-      if(increment_tick){
-        ++tick_number;
-        increment_tick = false;
-      }
       /*
        * For each pending task,
        * if task_thread_assignments[task] == 0, continue
@@ -533,6 +529,10 @@ AdvancedScheduler::runMaster(Task* root)
           // add it to the task
           task->addCpu(cpu);
           taskCpuAssignments[task].insert(cpu);
+        }
+        if(increment_tick){
+          ++tick_number;
+          increment_tick = false;
         }
         logger.log("start_task", "",
                    "name", TaskRunner::get_name(task->typeID()),
@@ -821,10 +821,6 @@ BasicScheduler::runMaster(Task* root)
         min_makespan = est_makespans[max];
       }
 
-      if(increment_tick){
-        ++tick_number;
-        increment_tick = false;
-      }
       /*
        * For each pending task,
        * if task_thread_assignments[task] == 0, continue
@@ -855,6 +851,10 @@ BasicScheduler::runMaster(Task* root)
           // add it to the task
           task->addCpu(cpu);
           taskCpuAssignments[task].insert(cpu);
+        }
+        if(increment_tick){
+          ++tick_number;
+          increment_tick = false;
         }
         logger.log("start_task", "",
                    "name", TaskRunner::get_name(task->typeID()),
