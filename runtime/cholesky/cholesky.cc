@@ -287,13 +287,8 @@ initDag(Matrix& A)
   return root;
 }
 
-int cholesky(int argc, char** argv)
+int cholesky(Scheduler* sch, int argc, char** argv)
 {
-  //ALWAYS Initialize the scheduler first
-  //Scheduler* sch = new BasicScheduler;
-  //Scheduler* sch = new AdvancedScheduler;
-  Scheduler* sch = new ProfilingScheduler;
-  sch->init(argc, argv);
   // disable dynamic thread adjustment in MKL
 #ifndef no_mkl
   mkl_set_dynamic(0);
@@ -308,15 +303,15 @@ int cholesky(int argc, char** argv)
   RegisterTask(gemm,  void, int, int, int,
     int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
 
-  if(argc != 4){
+  if(argc != 3){
     if(sch->rank() == 0){
-      std::cerr << "Usage: " << argv[1] << " <nblocks> <blocksize>" << std::endl;
+      std::cerr << "Usage: " << argv[0] << " <nblocks> <blocksize>" << std::endl;
     }
     return -1;
   }
 
-  int nBlocks = atoi(argv[2]);
-  int blockSize = atoi(argv[3]);
+  int nBlocks = atoi(argv[1]);
+  int blockSize = atoi(argv[2]);
   Matrix A(nBlocks, blockSize);
   Matrix L(nBlocks, blockSize);
 
@@ -400,7 +395,6 @@ int cholesky(int argc, char** argv)
 
 
   sch->deallocateHeap();
-  sch->finalize();
 
   return 0;
 }

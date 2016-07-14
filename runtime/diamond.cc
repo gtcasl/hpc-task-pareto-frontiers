@@ -39,17 +39,14 @@ initDag()
   return t1;
 }
 
-int diamond(int argc, char** argv)
+int diamond(Scheduler* sch, int argc, char** argv)
 {
   RegisterTask(test,
     void, int, int, int);
 
-  Scheduler* scheduler = new BasicScheduler;
-  
-  scheduler->init(argc,argv);
   Task* root = initDag();
 
-  scheduler->run(root);
+  sch->run(root);
 
   return 0;
 }

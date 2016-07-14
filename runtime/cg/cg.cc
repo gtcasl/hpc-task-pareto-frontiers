@@ -78,6 +78,17 @@ void sum_contribs(int n, DoubleArray contribs, DoublePtr result)
 //Compute Ax = y
 void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPerRow, IntArray nonzerosInRow)
 {
+  /*
+  std::map<int,int> hist;
+  for(int i = 0; i < nrows; i++){
+    ++hist[nnzPerRow[i]];
+  }
+  std::cout << "HIST\n";
+  for(const auto& h : hist){
+    std::cout << h.first << ": " << h.second << std::endl;
+  }
+  */
+
   debug(start spmv);
   //cblas_dspmv(CblasRowMajor, CblasUpper, nrows, 1.0, A, x, 1, 0.0, y, 1);
   multiply(nrows, x, y, A, nnzPerRow, nonzerosInRow);
@@ -91,11 +102,7 @@ void spmv(int nrows, DoubleArray A, DoubleArray x, DoubleArray y, IntArray nnzPe
 static void subtract(int n, DoubleArray C, DoubleArray A, DoubleArray B)
 {
   debug(start subtract);
-  //vdSub(n, A, B, C);
-#pragma omp parallel for
-  for(int row = 0; row < n; ++row){
-    C[row] = A[row] - B[row];
-  }
+  vdSub(n, A, B, C);
 
   debug(end subtract);
 }
@@ -239,14 +246,8 @@ initDag(config cfg,
 }
 
 
-int cg(int argc, char** argv)
+int cg(Scheduler* sch, int argc, char** argv)
 {
-  //ALWAYS Initialize the scheduler first
-  //Scheduler* sch = new BasicScheduler;
-  //Scheduler* sch = new AdvancedScheduler;
-  Scheduler* sch = new ProfilingScheduler;
-  sch->init(argc, argv);
-
   // disable dynamic thread adjustment in MKL
 #ifndef no_mkl
   mkl_set_dynamic(0);
@@ -264,18 +265,18 @@ int cg(int argc, char** argv)
   RegisterTask(subtract,void,int,DoubleArray,DoubleArray,DoubleArray);
 
   config cfg;
-  if(argc != 6){
+  if(argc != 5){
     if (sch->rank() == 0){
-      std::cerr << "Usage: " << argv[1] << " <nx> <ny> <nz> <nchunks>" << std::endl;
+      std::cerr << "Usage: " << argv[0] << " <nx> <ny> <nz> <nchunks>" << std::endl;
     }
     return -1;
   }
 
-  int nx = atoi(argv[2]), ny = atoi(argv[3]), nz = atoi(argv[4]);
+  int nx = atoi(argv[1]), ny = atoi(argv[2]), nz = atoi(argv[3]);
   int ncopies = 1;
   int nrows = nx*ny*nz;
   int nnz_per_row = 27;
-  int nchunks = atoi(argv[5]);
+  int nchunks = atoi(argv[4]);
   cfg.nchunks = nchunks;
   cfg.nnz_per_row = nnz_per_row;
   cfg.nrows = nrows;
@@ -344,7 +345,6 @@ int cg(int argc, char** argv)
     sch->run(root);
   }
   sch->deallocateHeap();
-  sch->finalize();
 
   return 0;
 }

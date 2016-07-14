@@ -36,6 +36,7 @@ generate_problem_27pt(
 
   int offset = 0;
   int nextChunk = 0;
+#pragma omp parallel for
   for (int rx=0; rx < nx; rx++){
     int cxStart = max(rx-1,0);
     int cxStop = min(rx+1,nx-1);

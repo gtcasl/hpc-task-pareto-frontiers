@@ -1,4 +1,4 @@
 #!/bin/bash
 #cg
-./go.sh 2 cg 204 204 204 1
+./go.sh 2 -s profile cg 200 200 200 16
 mv profile.log profile.cg.log

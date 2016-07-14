@@ -10,7 +10,7 @@ do
     #./cholesky.profile.sh
 done
 
-for x in `seq 1 10 228`
+for x in `seq 1 228`
 do
     echo "Running with $x threads"
     NUMTHREADS=$x ./cg.profile.sh

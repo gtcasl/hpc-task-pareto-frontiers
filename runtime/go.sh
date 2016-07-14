@@ -13,6 +13,6 @@ np=`expr $1 - 1`
 shift 1
 app=run
 
-scp run.mic mic0:
+scp -C run.mic mic0:
 
 mpirun -iface mic0 -np 1 -host `hostname` ./run.host $@ : -np $np -host mic0 /home/eric/run.mic $@

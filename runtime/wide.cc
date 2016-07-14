@@ -30,24 +30,21 @@ initDag(int width)
   return root;
 }
 
-int wideDAG(int argc, char** argv)
+int wideDAG(Scheduler* sch, int argc, char** argv)
 {
   RegisterTask(wide,
     void, int, int, int);
-
-  Scheduler* scheduler = new BasicScheduler;
   
-  if(argc != 3){
-    std::cerr << "Usage: " << argv[1] << " <# concurrent tasks>" << std::endl;
+  if(argc != 2){
+    std::cerr << "Usage: " << argv[0] << " <# concurrent tasks>" << std::endl;
     return -1;
   }
 
-  int width = atoi(argv[2]);
+  int width = atoi(argv[1]);
 
-  scheduler->init(argc,argv);
   Task* root = initDag(width);
 
-  scheduler->run(root);
+  sch->run(root);
 
   return 0;
 }

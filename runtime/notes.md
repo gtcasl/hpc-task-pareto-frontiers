@@ -1,4 +1,12 @@
 # Todo: Newest near top
+*For `spmv`, there is not a direct relationship between the number of non-zeros (or the histogram of non-zeros) to the performance of the kernel.*
+
+The baseline scheduler should perform about as poorly as the power-aware one if the timing models are totally off; neither can accurately guess well. The power-aware one may exhibit different characteristics, assuming that power can be modeled more accurately than time.
+
+*Can power be more accurately modeled than time?* Are these kernels consistent in their power usage, even if the total time is different (both avg power and max power?)?
+
+What do we care about the distinction between avg and max power? We can only sample at 50ms granularity, so even if our peak occurs at a faster rate, who cares? It just means we won't be able to measure any events that happen faster than that.
+
 ```
     array[buffers]:
         each buf points to a location at an offset within the actual thing.

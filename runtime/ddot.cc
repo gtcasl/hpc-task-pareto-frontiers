@@ -24,10 +24,8 @@ Task* initDag(int nelems, DoublePtr a, DoublePtr b, DoublePtr c, DoublePtr d)
   return root;
 }
 
-int run_ddot(int argc, char** argv)
+int run_ddot(Scheduler* sch, int argc, char** argv)
 {
-  Scheduler* sch = new BasicScheduler;
-  sch->init(argc, argv);
 
   RegisterTask(my_ddot,
     void, //return
@@ -47,7 +45,6 @@ int run_ddot(int argc, char** argv)
     sch->run(root);
   }
   sch->deallocateHeap();
-  sch->finalize();
   return 0;
 }
 

@@ -32,6 +32,9 @@ struct cpu_set_t {};
 // the energy scaling work.
 #define IDLE_POWER 106.9
 
+// This is how many times each task is executed for each call to run().
+#define NUMITERS 100
+
 #define new_task(taskName, ...) \
   make_task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
 
@@ -290,7 +293,9 @@ class TaskRunner_impl : public TaskRunner
     }
     auto theTask = static_cast<TaskType*>(t);
     theTask->setup();
-    theTask->run();
+    for(int i = 0; i < NUMITERS; ++i){
+      theTask->run();
+    }
     theTask->notifyDone();
   }
 };

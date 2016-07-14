@@ -5,7 +5,7 @@
 
 class Test { 
  public:
-  typedef int (*fxn)(int,char**);
+  typedef int (*fxn)(Scheduler*,int,char**);
 
   static void 
   registerNew(const char* name, fxn f);
