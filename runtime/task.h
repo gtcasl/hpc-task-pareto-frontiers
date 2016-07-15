@@ -18,6 +18,8 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
+#include <sys/time.h>
+#include <signal.h>
 
 #ifdef no_affinity
 struct cpu_set_t {};
@@ -31,9 +33,6 @@ struct cpu_set_t {};
 // This number was found empirically using the linear regression model from
 // the energy scaling work.
 #define IDLE_POWER 106.9
-
-// This is how many times each task is executed for each call to run().
-#define NUMITERS 100
 
 #define new_task(taskName, ...) \
   make_task(taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
@@ -154,6 +153,7 @@ class Task {
 class TaskRunner {
  public:
   virtual void run(Task* t, int size) = 0;
+  virtual void runProfiling(Task* t, int size) = 0;
 
   static void store(int id, TaskRunner* r, const char* name){
     runners_[id] = r;
@@ -278,6 +278,9 @@ class Task_tmpl : public Task
   }
 };
 
+extern bool done;
+
+void wakeup(int signum, siginfo_t*, void*);
 
 template <typename Fxn, typename First, typename ...Args>
 class TaskRunner_impl : public TaskRunner
@@ -292,10 +295,41 @@ class TaskRunner_impl : public TaskRunner
       abort();
     }
     auto theTask = static_cast<TaskType*>(t);
+
     theTask->setup();
-    for(int i = 0; i < NUMITERS; ++i){
+    theTask->run();
+    theTask->notifyDone();
+  }
+
+  void runProfiling(Task* t, int size)
+  {
+    if (sizeof(TaskType) != size){
+      std::cerr << "type mismatch between task received and runner on ID " 
+        << t->typeID() << std::endl;
+      abort();
+    }
+    auto theTask = static_cast<TaskType*>(t);
+
+    done = false;
+    struct sigaction sa;
+    sa.sa_sigaction = wakeup;
+    sa.sa_flags = SA_SIGINFO;
+    if(sigaction(SIGALRM, &sa, nullptr) != 0){
+      std::cerr << "Error: unable to set up signal handler" << std::endl;
+      abort();
+    }
+    struct itimerval work_time;
+    work_time.it_value.tv_sec = 0;
+    work_time.it_value.tv_usec = 500000; // sleep for 500 ms
+    work_time.it_interval.tv_sec = 0;
+    work_time.it_interval.tv_usec = 0;
+    setitimer(ITIMER_REAL, &work_time, NULL);
+
+    theTask->setup();
+    while(!done){
       theTask->run();
     }
+    done = false;
     theTask->notifyDone();
   }
 };

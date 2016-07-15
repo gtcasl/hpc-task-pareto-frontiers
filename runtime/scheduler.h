@@ -126,7 +126,7 @@ class Scheduler
   }
   */
 
-  void runWorker();
+  virtual void runWorker();
   void terminateWorkers();
   virtual void runMaster(Task* root) = 0;
 
@@ -223,19 +223,17 @@ operator<<(std::ostream& os, const Buffer<T>& buf){
 
 class BasicScheduler : public Scheduler
 {
- public:
   void runMaster(Task* root);
 };
 
 class AdvancedScheduler : public Scheduler
 {
- public:
   void runMaster(Task* root);
 };
 
 class ProfilingScheduler : public Scheduler
 {
-  public:
+    void runWorker();
     void runMaster(Task* root);
 };
 

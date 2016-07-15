@@ -207,6 +207,40 @@ Scheduler::runWorker()
   }
 }
 
+void
+ProfilingScheduler::runWorker()
+{
+  int parent = 0;
+  MPI_Status stat;
+  while (1){
+    MPI_Recv(taskBuffer, sizeof(taskBuffer), MPI_BYTE, parent, 
+      MPI_ANY_TAG, MPI_COMM_WORLD, &stat);
+    int size;
+    MPI_Get_count(&stat, MPI_BYTE, &size);
+    if (stat.MPI_TAG == terminate_tag){
+      return;
+    } else {
+      auto t = reinterpret_cast<Task*>(taskBuffer);
+      auto runner = TaskRunner::get(t->typeID());
+      if (!runner){
+        fprintf(stderr, "No runner registered for type ID %d\n", t->typeID());
+        abort();
+      }
+      double start = getTime();
+      runner->runProfiling(t, size);
+      double stop = getTime();
+      double elapsed_seconds = stop - start;
+
+      // Send elapsed time and num cores to master
+      MPI_Request rqst1, rqst2;
+      MPI_Isend(&elapsed_seconds, 1, MPI_DOUBLE, parent, 0, MPI_COMM_WORLD, &rqst1);
+      int ncores = t->getNumThreads();
+      MPI_Isend(&ncores, 1, MPI_INT, parent, 0, MPI_COMM_WORLD, &rqst2);
+    }
+  }
+}
+
+
 double
 Scheduler::getTime() const 
 {

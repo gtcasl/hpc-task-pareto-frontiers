@@ -155,3 +155,11 @@ double Task::estimateTime() const
   return my_time + children_time;
 }
 
+bool impl::done;
+
+void impl::wakeup(int signum, siginfo_t*, void*){
+  if(signum == SIGALRM){
+    done = true;
+  }
+}
+
