@@ -193,6 +193,7 @@ Scheduler::runWorker()
         fprintf(stderr, "No runner registered for type ID %d\n", t->typeID());
         abort();
       }
+      runner->disableProfiling();
       double start = getTime();
       runner->run(t, size);
       double stop = getTime();
@@ -227,7 +228,7 @@ ProfilingScheduler::runWorker()
         abort();
       }
       double start = getTime();
-      runner->runProfiling(t, size);
+      runner->run(t, size);
       double stop = getTime();
       double elapsed_seconds = stop - start;
 

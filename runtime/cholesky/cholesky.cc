@@ -16,6 +16,10 @@ enum fxn_id {
   gemm_id,
   syrk_id,
   trsm_id,
+  potrfprofile_id,
+  syrkprofile_id,
+  trsmprofile_id,
+  gemmprofile_id,
 } ;
 
 typedef Buffer<double> DoublePtr;
@@ -128,7 +132,30 @@ class Matrix
 };
 
 void
-trsm(int /*k*/, int /*m*/, int size, DoubleArray A, DoubleArray B)
+trsmprofile(int /*k*/, int /*m*/, int size, DoubleArray A, DoubleArray B)
+{
+  task_debug("Solving TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
+  double* Bcopy = (double*) malloc(size * size * sizeof(double));
+  for(int i = 0; i < size*size; i++){
+    Bcopy[i] = B[i];
+  }
+  //solve AX = B
+  //B overwrriten with X
+  //char side = 'R';
+  //char uplo = 'U';
+  //char trans = 'N';
+  //char diag = 'N';
+  double alpha = 1.0;
+  cblas_dtrsm(CblasColMajor, CblasRight, CblasUpper, CblasNoTrans, CblasNonUnit,
+    size, size, alpha,
+    A, size,
+    Bcopy, size);
+
+  free(Bcopy);
+}
+
+void
+trsm(int k, int m, int size, DoubleArray A, DoubleArray B)
 {
   task_debug("Solving TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
   //solve AX = B
@@ -145,13 +172,34 @@ trsm(int /*k*/, int /*m*/, int size, DoubleArray A, DoubleArray B)
 }
 
 void
-potrf(int /*k*/, int size, DoubleArray A)
+potrfprofile(int k, int size, DoubleArray A)
+{
+  double* Acopy = (double*) malloc(size * size * sizeof(double));
+  for(int i = 0; i < size*size; i++){
+    Acopy[i] = A[i];
+  }
+  task_debug("Running POTRF A(%d,%d)\n", k, k);
+  char uplo = 'U';
+  int info = LAPACKE_dpotrf(LAPACK_COL_MAJOR, uplo, size, Acopy, size);
+  if (info != 0){
+    fprintf(stderr, "FAILURE on DPOTRF: %d\n", info);
+    std::cout << "A[" << info << "]: " << Acopy[info] << std::endl;
+    abort();
+  }
+  double* ptr = Acopy;
+//#pragma omp parallel for
+  for (int i=0; i < size; ++i){
+    for (int j=0; j < size; ++j, ++ptr){
+      if (j > i) *ptr = 0;
+    }
+  }
+  free(Acopy);
+}
+
+void
+potrf(int k, int size, DoubleArray A)
 {
   task_debug("Running POTRF A(%d,%d)\n", k, k);
-  //std::cout << A << std::endl;
-  //for(int i = 0; i < size; i++){
-  //  std::cout << A[i] << std::endl;
-  //}
   char uplo = 'U';
   int info = LAPACKE_dpotrf(LAPACK_COL_MAJOR, uplo, size, A, size);
   if (info != 0){
@@ -169,8 +217,39 @@ potrf(int /*k*/, int size, DoubleArray A)
 }
 
 void
-syrk(
+syrkprofile(
   int /*k*/, int /*n*/,
+  int size,
+  bool trans,
+  double alpha, 
+  double beta,
+  DoubleArray C,
+  DoubleArray A)
+{
+  double* Ccopy = (double*) malloc(size * size * sizeof(double));
+  for(int i = 0; i < size*size; i++){
+    Ccopy[i] = C[i];
+  }
+  task_debug("Adding  SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, k, n);
+  CBLAS_TRANSPOSE ta = trans ? CblasNoTrans : CblasTrans;
+  cblas_dsyrk(CblasColMajor, CblasUpper, ta, size, size, 
+    alpha, A, size,
+    beta, Ccopy, size);
+
+//#pragma omp parallel for
+  for (int i=0; i < size; ++i){
+    for (int j=i+1; j < size; ++j){
+      int toIdx = i*size + j;
+      int fromIdx = j*size + i;
+      Ccopy[toIdx] = Ccopy[fromIdx];
+    }
+  }
+  free(Ccopy);
+}
+
+void
+syrk(
+  int k, int n,
   int size,
   bool trans,
   double alpha, 
@@ -195,7 +274,7 @@ syrk(
 }
 
 void
-gemm(
+gemmprofile(
   int /*m*/, int /*n*/, int /*k*/,
   int size,
   bool ltrans, 
@@ -205,6 +284,33 @@ gemm(
   DoubleArray product, 
   DoubleArray left, 
   DoubleArray right){
+  double* Pcopy = (double*) malloc(size * size * sizeof(double));
+  for(int i = 0; i < size*size; i++){
+    Pcopy[i] = product[i];
+  }
+  task_debug("Adding  GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
+    m, n, m, k, k, n);
+  CBLAS_TRANSPOSE lt = ltrans ? CblasNoTrans : CblasTrans; //GD fortran
+  CBLAS_TRANSPOSE rt = rtrans ? CblasNoTrans : CblasTrans; //GD fortran
+  cblas_dgemm(CblasColMajor, lt, rt, size, size, size,
+    alpha, left, size, 
+    right, size, 
+    beta, Pcopy, size);
+  free(Pcopy);
+}
+
+void
+gemm(
+  int m, int n, int k,
+  int size,
+  bool ltrans, 
+  bool rtrans,
+  double alpha,
+  double beta,
+  DoubleArray product, 
+  DoubleArray left, 
+  DoubleArray right){
+  task_debug("Adding  SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, k, n);
   task_debug("Adding  GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
     m, n, m, k, k, n);
   CBLAS_TRANSPOSE lt = ltrans ? CblasNoTrans : CblasTrans; //GD fortran
@@ -227,6 +333,73 @@ class TaskMap {
   int size_;
   std::vector<Task*> tasks_;
 };
+
+Task*
+initProfilingDag(Matrix& A)
+{
+  Task* root = 0;
+
+  int nBlocks = A.blockGridSize();
+  int blockSize = A.blockSize();
+
+  TaskMap pots(nBlocks);
+  TaskMap syrs(nBlocks);
+  TaskMap trs(nBlocks);
+  TaskMap gemms(nBlocks);
+   
+  for (int k=0; k < nBlocks; ++k){
+    DoubleArray Akk = A.block(k,k);
+    Task* diagprofile = new_task(potrfprofile, k, blockSize, Akk);
+    Task* diag = new_task(potrf, k, blockSize, Akk);
+    dep_debug("POTRF (%d,%d) = %p\n", k,k,diag);
+    diag->dependsOn(diagprofile);
+    pots(k,k) = diag;
+    if (k == 0){
+      root = diagprofile;
+    } else {
+      //the potrf will only directly depend on the most recent syrk
+      diagprofile->dependsOn(syrs(k,k));
+    }
+    for (int m=k+1; m < nBlocks; ++m){
+      DoubleArray Amk = A.block(m,k);
+      Task* solveprofile = new_task(trsmprofile, k, m, blockSize, Akk, Amk);
+      Task* solve = new_task(trsm, k, m, blockSize, Akk, Amk);
+      dep_debug(" TRSM (%d,%d) = %p\n", m, k, solve);
+      solve->dependsOn(solveprofile);
+      trs(m,k) = solve;
+      solveprofile->dependsOn(pots(k,k));
+      if (m >= 2){
+        solveprofile->dependsOn(gemms(m,k));
+      }
+    }
+    for (int n=k+1; n < nBlocks; ++n){
+      DoubleArray Ann = A.block(n,n);
+      DoubleArray Ank = A.block(n,k);
+      //Amm -= Amk * Amk^T
+      //Ank ends up transposed from the DTRSM solve
+      Task* symmUpdprofile = new_task(syrkprofile, k, n, blockSize, true, -1.0, 1.0, Ann, Ank);
+      Task* symmUpd = new_task(syrk, k, n, blockSize, true, -1.0, 1.0, Ann, Ank);
+      symmUpd->dependsOn(symmUpdprofile);
+      dep_debug(" SYRK (%d,%d) = %p\n", n,n,symmUpd);
+      symmUpdprofile->dependsOn(trs(n,k));
+      symmUpdprofile->dependsOn(syrs(n,n)); //depend on prev syrk here
+      syrs(n,n) = symmUpd;
+      for (int m=n+1; m < nBlocks; ++m){
+        DoubleArray Amk = A.block(m,k);
+        DoubleArray Amn = A.block(m,n);
+        //because of how awesome BLAS is, Ank is transposed backwards
+        Task* multprofile = new_task(gemmprofile, m, n, k, blockSize, true, false, -1.0, 1.0, Amn, Amk, Ank);
+        Task* mult = new_task(gemm, m, n, k, blockSize, true, false, -1.0, 1.0, Amn, Amk, Ank);
+        mult->dependsOn(multprofile);
+        dep_debug(" GEMM (%d,%d) = %p\n", m,n,mult);
+        gemms(m,n) = mult;
+        multprofile->dependsOn(trs(m,k));
+        multprofile->dependsOn(trs(n,k));
+      }
+    }
+  }
+  return root;
+}
 
 Task*
 initDag(Matrix& A)
@@ -285,6 +458,126 @@ initDag(Matrix& A)
     }
   }
   return root;
+}
+
+int choleskyprofiling(Scheduler* sch, int argc, char** argv)
+{
+  // disable dynamic thread adjustment in MKL
+#ifndef no_mkl
+  mkl_set_dynamic(0);
+#endif
+
+  RegisterTask(potrfprofile, void, int,
+    int, DoubleArray);
+  RegisterTask(trsmprofile,  void, int, int,
+    int, DoubleArray, DoubleArray);
+  RegisterTask(syrkprofile,  void, int, int, 
+    int, bool, double, double, DoubleArray, DoubleArray);
+  RegisterTask(gemmprofile,  void, int, int, int,
+    int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
+  RegisterMutatingTask(potrf, void, int,
+    int, DoubleArray);
+  RegisterMutatingTask(trsm,  void, int, int,
+    int, DoubleArray, DoubleArray);
+  RegisterMutatingTask(syrk,  void, int, int, 
+    int, bool, double, double, DoubleArray, DoubleArray);
+  RegisterMutatingTask(gemm,  void, int, int, int,
+    int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
+
+  if(argc != 3){
+    if(sch->rank() == 0){
+      std::cerr << "Usage: " << argv[0] << " <nblocks> <blocksize>" << std::endl;
+    }
+    return -1;
+  }
+
+  int nBlocks = atoi(argv[1]);
+  int blockSize = atoi(argv[2]);
+  Matrix A(nBlocks, blockSize);
+  Matrix L(nBlocks, blockSize);
+
+  int ncopies = 1;
+  sch->allocateHeap(ncopies);
+
+  for (int c=0; c < ncopies; ++c, sch->nextIter()){
+    if (sch->rank() == 0){
+
+      for (int i=0; i < nBlocks; ++i){
+        for (int j=0; j < nBlocks; ++j){
+          L.symmetricFill(i,j);
+        }
+      }
+
+      for (int i=0; i < nBlocks; ++i){
+        for (int j=0; j <= i; ++j){
+          DoubleArray Aij = A.block(i,j);
+          for (int k=0; k < nBlocks; ++k){
+            DoubleArray Lik = L.block(i,k);
+            DoubleArray Ljk = L.block(j,k);
+            gemm(i,j,k,blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
+          }
+        }
+      }
+
+      // send A & L
+      MPI_Send(A.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+      MPI_Send(L.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+    }
+    if(sch->rank() == 1){
+      // recv A & L
+      MPI_Recv(A.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(L.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      //A.print("before");
+      //L.print("before");
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
+
+  sch->resetIter();
+
+  for (int iter=0; iter < ncopies; ++iter, sch->nextIter()){
+    Task* root = 0;
+    if (sch->rank() == 0){
+      root = initProfilingDag(A);
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    sch->run(root);
+    int nfailures = 0;
+    if(sch->rank() == 1){
+      //A.print("after");
+      //L.print("after");
+      for (int i=0; i < nBlocks; ++i){
+        //just check the diagonal blocks...
+        //the other blocks end up weird and transposed
+        DoubleArray Aii = A.block(i,i);
+        DoubleArray Lii = L.block(i,i);
+        int nelems = blockSize * blockSize;
+        double tol = 1e-4;
+        for (int j=0; j < nelems; ++j){
+          double delta = fabs(Aii[j] - Lii[j]);
+          if (delta > tol){
+            nfailures++;
+          }
+        }
+      }
+      if (nfailures){
+        printf("Cholesky failed with %d wrong elements on iteration %d\n",
+          nfailures, iter);
+      } else {
+        printf("Cholesky passed validation test on iteration %d\n", iter);
+      }
+    }
+  }
+
+  fflush(stdout);
+
+  //A.print("factorized A");
+
+
+  sch->deallocateHeap();
+
+  return 0;
 }
 
 int cholesky(Scheduler* sch, int argc, char** argv)
@@ -400,3 +693,4 @@ int cholesky(Scheduler* sch, int argc, char** argv)
 }
 
 RegisterTest("cholesky", cholesky);
+RegisterTest("choleskyprofiling", choleskyprofiling);

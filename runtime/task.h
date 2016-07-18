@@ -152,8 +152,8 @@ class Task {
 
 class TaskRunner {
  public:
+  virtual void disableProfiling(){}
   virtual void run(Task* t, int size) = 0;
-  virtual void runProfiling(Task* t, int size) = 0;
 
   static void store(int id, TaskRunner* r, const char* name){
     runners_[id] = r;
@@ -287,7 +287,17 @@ class TaskRunner_impl : public TaskRunner
 {
   typedef Task_tmpl<Fxn,First,Args...> TaskType;
  public:
-  void run(Task* t, int size)
+  void disableProfiling(){doProfiling = false;}
+  bool doProfiling;
+  TaskRunner_impl(bool profile) : doProfiling{profile}{}
+  void run(Task* t, int size){
+    if(doProfiling){
+      runProfiling(t, size);
+    } else {
+      runNoProfiling(t, size);
+    }
+  }
+  void runNoProfiling(Task* t, int size)
   {
     if (sizeof(TaskType) != size){
       std::cerr << "type mismatch between task received and runner on ID " 
@@ -348,16 +358,21 @@ class FxnTraits
 
 template <typename myFxnTraits>
 int
-registerFunction(typename myFxnTraits::Fxn f, int id, const char* name){
+registerFunction(typename myFxnTraits::Fxn f, int id, const char* name, bool profile){
   impl::FunctionMap<typename myFxnTraits::Fxn>::store(id, f);
   typedef typename myFxnTraits::Runner myRunner;
-  TaskRunner::store(id, new myRunner, name);
+  TaskRunner::store(id, new myRunner(profile), name);
   return 0;
 }
 
+#define RegisterMutatingTask(fxn,ret,...) \
+  typedef impl::FxnTraits<ret,__VA_ARGS__> type_traits_##fxn; \
+  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id,#fxn,false); \
+  (void)ignore_##fxn;
+  
 #define RegisterTask(fxn,ret,...) \
   typedef impl::FxnTraits<ret,__VA_ARGS__> type_traits_##fxn; \
-  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id,#fxn); \
+  int ignore_##fxn = registerFunction<type_traits_##fxn>(fxn,fxn##_id,#fxn,true); \
   (void)ignore_##fxn;
   
 
