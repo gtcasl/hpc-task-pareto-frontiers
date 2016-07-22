@@ -38,8 +38,8 @@ class Matrix
  public:
   void
   randomFill(){
-    //std::random_device rd;
-    std::mt19937 gen(13);
+    std::random_device rd;
+    std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0,1);
     int nrows = blockSize_ * blockGridSize_;
     for(int i = 0; i < nrows * nrows; i++){
@@ -51,8 +51,8 @@ class Matrix
 
   void 
   symmetricFill(){
-    //std::random_device rd;
-    std::mt19937 gen(17);
+    std::random_device rd;
+    std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0,1);
     int nrows = blockSize_ * blockGridSize_;
     for(int i = 0; i < nrows; i++){

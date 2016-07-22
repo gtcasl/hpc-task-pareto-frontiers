@@ -1,6 +1,6 @@
 TARGET := run
 SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc cholesky/choleskyprofile.cc
-HEADERS := $(shell ls *.h)
+HEADERS := $(shell ls *.h) cholesky/cholesky.h
 
 CXX :=    mpiicpc
 CXXFLAGS := -fPIC -O2 -g -mkl -w3 -diag-disable remark -Wunused-variable
