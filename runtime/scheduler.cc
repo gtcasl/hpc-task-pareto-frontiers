@@ -329,7 +329,7 @@ AdvancedScheduler::runMaster(Task* root)
   std::cout << "Starting execution" << std::endl;
 
   std::list<int> availableWorkers;
-  for (int i=1; i < nworkers(); ++i){ //leave off 0
+  for (int i=0; i < nworkers(); ++i){ //leave off 0
     availableWorkers.push_back(i);
   }
 
@@ -705,7 +705,7 @@ BaselineScheduler::runMaster(Task* root)
              "max_threads", numAvailableCores());
 
   std::list<int> availableWorkers;
-  for (int i=1; i < nworkers(); ++i){ //leave off 0
+  for (int i=0; i < nworkers(); ++i){ //leave off 0
     availableWorkers.push_back(i);
   }
 
@@ -973,8 +973,7 @@ SequentialScheduler::runMaster(Task* root)
       logger.log("start_task", "",
                  "name", TaskRunner::get_name(task->typeID()),
                  "start_time", getTime());
-      int worker = 0;
-      task->run(worker, 0);
+      task->run(0, 0);
       runningTask = task;
     }
   } while (runningTask);
