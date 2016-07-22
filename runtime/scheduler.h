@@ -221,7 +221,12 @@ operator<<(std::ostream& os, const Buffer<T>& buf){
   return os;
 }
 
-class BasicScheduler : public Scheduler
+class BaselineScheduler : public Scheduler
+{
+  void runMaster(Task* root);
+};
+
+class SequentialScheduler : public Scheduler
 {
   void runMaster(Task* root);
 };

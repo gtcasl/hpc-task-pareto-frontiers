@@ -12,8 +12,10 @@ int main(int argc, char** argv)
     switch(opt) {
       case 's':{
         std::string argstring{optarg};
-        if(argstring == "basic"){
-          scheduler.reset(new BasicScheduler);
+        if(argstring == "baseline"){
+          scheduler.reset(new BaselineScheduler);
+        } else if(argstring == "sequential"){
+          scheduler.reset(new SequentialScheduler);
         } else if(argstring == "advanced"){
           scheduler.reset(new AdvancedScheduler);
         } else if(argstring == "profile"){

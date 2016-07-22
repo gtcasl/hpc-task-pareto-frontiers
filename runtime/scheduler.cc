@@ -698,7 +698,7 @@ void ProfilingScheduler::runMaster(Task* root)
 }
 
 void
-BasicScheduler::runMaster(Task* root)
+BaselineScheduler::runMaster(Task* root)
 {
   Logger logger{"scheduler.log"};
   logger.log("message", "cataloging configuration",
@@ -918,4 +918,64 @@ BasicScheduler::runMaster(Task* root)
   logger.log("average_power_W", avg_power_W);
   logger.log("max_power_W", max_power_ / 1000000.0);
   logger.log("time_s", end_time - start_time);
+}
+
+void
+SequentialScheduler::runMaster(Task* root)
+{
+  Logger logger{"scheduler.log"};
+  logger.log("message", "cataloging configuration",
+             "max_threads", numAvailableCores());
+
+  Task* runningTask = nullptr;
+  std::list<Task*> pendingTasks;
+
+  pendingTasks.push_back(root);
+  do{
+    if (runningTask && runningTask->checkDone()){
+      // read back the elapsed time from the runner and log to file
+      double elapsed_seconds;
+      int nthreads;
+      MPI_Recv(&elapsed_seconds, 1, MPI_DOUBLE, 1, 0,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&nthreads, 1, MPI_INT, 1, 0,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      double start_time = runningTask->getStartTime();
+      logger.log("end_task", "",
+                 "name", TaskRunner::get_name(runningTask->typeID()),
+                 "start_time", start_time,
+                 "elapsed_seconds", elapsed_seconds,
+                 "nthreads", nthreads,
+                 "released_listeners", runningTask->getNumListeners());
+      runningTask->clearListeners(pendingTasks);
+      runningTask = nullptr;
+    }
+    
+    if(!pendingTasks.empty()){
+      /*
+       * For each pending task,
+       * if task_thread_assignments[task] == 0, continue
+       * else
+       * remove task from pendingTasks
+       * assign it task_thread_assignments[task] threads
+       * pop a worker
+       * run task on worker
+       * add task to runningTasks
+       */
+      Task* task = pendingTasks.back();
+      pendingTasks.pop_back();
+      for(int i = 0; i < numAvailableCores(); ++i){
+        // get an available cpu
+        int cpu = claimCpu();
+        // add it to the task
+        task->addCpu(cpu);
+      }
+      logger.log("start_task", "",
+                 "name", TaskRunner::get_name(task->typeID()),
+                 "start_time", getTime());
+      int worker = 0;
+      task->run(worker, 0);
+      runningTask = task;
+    }
+  } while (runningTask);
 }
