@@ -281,6 +281,9 @@ int choleskyprofiling(Scheduler* sch, int argc, char** argv)
     int nfailures = 0;
     if(sch->rank() == 1){
       std::cout << "Performing validation\n";
+#ifdef _OPENMP
+  omp_set_num_threads(228);
+#endif
       for (int i=0; i < nrows; ++i){
         for (int j=i+1; j < nrows; ++j){
           int toIdx = j*nrows + i;

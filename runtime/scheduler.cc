@@ -596,6 +596,7 @@ AdvancedScheduler::runMaster(Task* root)
   logger.log("average_power_W", avg_power_W);
   logger.log("max_power_W", max_power_ / 1000000.0);
   logger.log("time_s", end_time - start_time);
+  logger.log("message", "ALL DONE");
 }
 
 
@@ -607,7 +608,7 @@ void ProfilingScheduler::runMaster(Task* root)
              "max_threads", iter_num_threads);
   std::cout << "Starting execution" << std::endl;
 
-  std::list<Task*> runningTasks;
+  Task* runningTask = nullptr;
   std::list<Task*> pendingTasks;
 
   // initialize power measurement on this rank
@@ -630,36 +631,29 @@ void ProfilingScheduler::runMaster(Task* root)
 
   pendingTasks.push_back(root);
   do{
-    std::list<Task*>::iterator tmp,
-      it = runningTasks.begin(),
-      end = runningTasks.end();
-    while (it != end){
-      tmp = it++;
-      Task* t = *tmp;
-      if (t->checkDone()){
-        // read back the elapsed time from the runner and log to file
-        double elapsed_seconds;
-        int nthreads;
-        MPI_Recv(&elapsed_seconds, 1, MPI_DOUBLE, t->worker() + 1, 0,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&nthreads, 1, MPI_INT, t->worker() + 1, 0,
-                 MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        double start_time = t->getStartTime();
-        double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
-        logger.log("end_task", "",
-                   "name", TaskRunner::get_name(t->typeID()),
-                   "start_time", start_time,
-                   "elapsed_seconds", elapsed_seconds,
-                   "nthreads", nthreads,
-                   "avg_power_W", avg_power_W,
-                    "max_power_W", max_power_ / 1000000.0,
-                   "released_listeners", t->getNumListeners());
-        runningTasks.erase(tmp);
-        t->clearListeners(pendingTasks);
-      }
+    if(runningTask && runningTask->checkDone()){
+      // read back the elapsed time from the runner and log to file
+      double elapsed_seconds;
+      int nthreads;
+      MPI_Recv(&elapsed_seconds, 1, MPI_DOUBLE, runningTask->worker() + 1, 0,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      MPI_Recv(&nthreads, 1, MPI_INT, runningTask->worker() + 1, 0,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+      double start_time = runningTask->getStartTime();
+      double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+      logger.log("end_task", "",
+                 "name", TaskRunner::get_name(runningTask->typeID()),
+                 "start_time", start_time,
+                 "elapsed_seconds", elapsed_seconds,
+                 "nthreads", nthreads,
+                 "avg_power_W", avg_power_W,
+                  "max_power_W", max_power_ / 1000000.0,
+                 "released_listeners", runningTask->getNumListeners());
+      runningTask->clearListeners(pendingTasks);
+      runningTask = nullptr;
     }
 
-    if(!pendingTasks.empty() && runningTasks.empty()){
+    if(!runningTask && !pendingTasks.empty()){
       /*
        * For each pending task,
        * if task_thread_assignments[task] == 0, continue
@@ -670,7 +664,7 @@ void ProfilingScheduler::runMaster(Task* root)
        * run task on worker
        * add task to runningTasks
        */
-      Task* task = *std::begin(pendingTasks);
+      Task* task = pendingTasks.front();
       pendingTasks.pop_front();
       for(int i = 0 ; i < iter_num_threads; ++i){
         task->addCpu(i);
@@ -683,9 +677,9 @@ void ProfilingScheduler::runMaster(Task* root)
       cumulative_power_ = 0;
       num_power_samples_ = 0;
       task->run(0, 0);
-      runningTasks.push_back(task);
+      runningTask = task;
     }
-  } while (!runningTasks.empty());
+  } while (runningTask);
 
 
   // finalize power measurement on this rank
@@ -695,6 +689,8 @@ void ProfilingScheduler::runMaster(Task* root)
   work_time.it_value.tv_sec = 0;
   work_time.it_value.tv_usec = 0;
   setitimer(ITIMER_REAL, &work_time, NULL);
+
+  logger.log("message", "ALL DONE");
 }
 
 void
@@ -918,6 +914,7 @@ BaselineScheduler::runMaster(Task* root)
   logger.log("average_power_W", avg_power_W);
   logger.log("max_power_W", max_power_ / 1000000.0);
   logger.log("time_s", end_time - start_time);
+  logger.log("message", "ALL DONE");
 }
 
 void
@@ -951,7 +948,7 @@ SequentialScheduler::runMaster(Task* root)
       runningTask = nullptr;
     }
     
-    if(!pendingTasks.empty()){
+    if(!runningTask && !pendingTasks.empty()){
       /*
        * For each pending task,
        * if task_thread_assignments[task] == 0, continue
@@ -962,13 +959,13 @@ SequentialScheduler::runMaster(Task* root)
        * run task on worker
        * add task to runningTasks
        */
-      Task* task = pendingTasks.back();
-      pendingTasks.pop_back();
+      Task* task = pendingTasks.front();
+      pendingTasks.pop_front();
       for(int i = 0; i < numAvailableCores(); ++i){
         // get an available cpu
-        int cpu = claimCpu();
+        //int cpu = claimCpu();
         // add it to the task
-        task->addCpu(cpu);
+        task->addCpu(i);
       }
       logger.log("start_task", "",
                  "name", TaskRunner::get_name(task->typeID()),
@@ -977,4 +974,5 @@ SequentialScheduler::runMaster(Task* root)
       runningTask = task;
     }
   } while (runningTask);
+  logger.log("message", "ALL DONE");
 }

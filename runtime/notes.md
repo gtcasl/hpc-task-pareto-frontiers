@@ -1,4 +1,6 @@
 # Todo: Newest near top
+The baseline scheduler (and the advanced one, by extension), messes up the data. However, the profiling one and the sequential one seem to work out ok. Also it's only for some configurations its borked. I don't get it.
+
 *For `spmv`, there is not a direct relationship between the number of non-zeros (or the histogram of non-zeros) to the performance of the kernel.*
 
 The baseline scheduler should perform about as poorly as the power-aware one if the timing models are totally off; neither can accurately guess well. The power-aware one may exhibit different characteristics, assuming that power can be modeled more accurately than time.

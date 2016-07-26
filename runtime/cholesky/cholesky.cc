@@ -242,15 +242,16 @@ int cholesky(Scheduler* sch, int argc, char** argv)
         }
       }
       double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
-      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasTrans, nrows, nrows, nrows,
-                  1.0, L.storageAddr(), nrows, L.storageAddr(), nrows,
-                  0.0, tmp, nrows);
-      for(int i = 0; i < nrows * nrows; i++){
-        double tol = 1e-4;
-        auto gold_val = A.storageAddr()[i];
-        auto test_val = tmp[i];
-        if(fabs(gold_val - test_val) > tol){
-          nfailures++;
+      cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, nrows, nrows,
+                  1.0, L.storageAddr(), nrows, 0.0, tmp, nrows);
+      for(int i = 0; i < nrows; i++){
+        for(int j = 0; j < i+1; j++){
+          double tol = 1e-4;
+          auto gold_val = A.storageAddr()[j*nrows + i];
+          auto test_val = tmp[j*nrows + i];
+          if(fabs(gold_val - test_val) > tol){
+            nfailures++;
+          }
         }
       }
       free(tmp);
