@@ -46,7 +46,7 @@ Scheduler::init(int argc, char** argv)
   }
   auto power_limit_env = getenv("POWERLIMIT");
   if(power_limit_env != NULL){
-    power_limit_ = std::atoi(power_limit_env);
+    power_limit_ = std::atol(power_limit_env);
     available_power_ = power_limit_;
   }
   for(int i = 0; i < num_threads; ++i){
@@ -480,7 +480,7 @@ AdvancedScheduler::runMaster(Task* root)
         min_makespan = est_makespans[max];
       }
 
-      int sum_p = 0;
+      double sum_p = 0;
       for(const auto& t : pendingTasks){
         if(task_thread_assignments[t] != 0){
           sum_p += TaskRunner::get_powers(t->typeID())[task_thread_assignments[t]];
@@ -490,7 +490,7 @@ AdvancedScheduler::runMaster(Task* root)
         logger.log("message", "Need to reduce workload to fit within power budget",
                    "available", available_power_,
                    "sum_p", sum_p);
-        while(sum_p > available_power_){
+        while(sum_p >= available_power_){
           // the loser is the task that slows the least with a delta in power
           // losing task: Task*, #threads, delta t, delta p
           // time goes up, power goes down
@@ -498,10 +498,16 @@ AdvancedScheduler::runMaster(Task* root)
           int new_threads = -1;
           double delta_t{std::numeric_limits<double>::infinity()};
           double delta_p = 0;
+          bool found_losing_task = false;
           for(const auto& t : pendingTasks){
             int old_t = task_thread_assignments[t];
             int new_t = TaskRunner::get_next_least_powerful_num_threads(t->typeID(),
                                                                         old_t);
+            if(old_t == 0){
+              continue;
+            } else {
+              found_losing_task = true;
+            }
             double old_time = TaskRunner::get_times(t->typeID())[old_t];
             double new_time = TaskRunner::get_times(t->typeID())[new_t];
             if((new_time == std::numeric_limits<double>::infinity()) ||
@@ -518,12 +524,18 @@ AdvancedScheduler::runMaster(Task* root)
           assert((new_threads == 0 ||
                  new_threads < task_thread_assignments[losing_task]) &&
                  "Error: by lowering the power we're increasing the number of threads. Uh oh.");
+
+          if(!found_losing_task){
+            logger.log("message", "Unable to find a task that can lower power any more");
+            break;
+          }
           logger.log("message", "Lowering power",
                      "name", TaskRunner::get_name(losing_task->typeID()),
                      "old_threads", task_thread_assignments[losing_task],
                      "new_threads", new_threads,
                      "delta_t", delta_t,
-                     "delta_p", delta_p);
+                     "delta_p", delta_p,
+                     "sum_p", sum_p);
           task_thread_assignments[losing_task] = new_threads;
           sum_p += delta_p;
         }

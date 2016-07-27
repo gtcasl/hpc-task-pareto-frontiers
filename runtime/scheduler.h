@@ -84,7 +84,7 @@ class Scheduler
     cumulative_power_(0),
     num_power_samples_(0),
     max_power_(0),
-    power_limit_(1000),
+    power_limit_(1000.0),
     available_power_(power_limit_)
   {
     if (global){
@@ -152,8 +152,8 @@ class Scheduler
   long long cumulative_power_;
   long num_power_samples_;
   uint32_t max_power_;
-  uint32_t power_limit_; // I think the default of 350 is way above the TDP
-  int32_t available_power_; // amount of power that can be used at the moment
+  double power_limit_; // I think the default of 350 is way above the TDP
+  double available_power_; // amount of power that can be used at the moment
 
 
 };
