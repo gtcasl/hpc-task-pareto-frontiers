@@ -268,8 +268,11 @@ initDag(config cfg,
 int cg(int argc, char** argv)
 {
   //ALWAYS Initialize the scheduler first
-  //Scheduler* sch = new BasicScheduler;
+#ifdef basic_scheduler
+  Scheduler* sch = new BasicScheduler;
+#else
   Scheduler* sch = new AdvancedScheduler;
+#endif
   sch->init(argc, argv);
 
   // disable dynamic thread adjustment in MKL

@@ -9,9 +9,11 @@ target := darwin
 
 MPI := $(HOME)/Programs/install/mpich/gcc48/bin
 
-CXX :=    $(MPI)/mpicxx
-CC :=     $(MPI)/mpicc
-CXXFLAGS := -fPIC -O0 -g -Wall -Wextra -std=c++11
+#CXX :=    $(MPI)/mpicxx
+#CC :=     $(MPI)/mpicc
+CXX := mpicxx
+CC := mpicc
+CXXFLAGS := -fPIC -O0 -g -w -std=c++11
 CPPFLAGS := -I. 
 LIBDIR :=   
 PREFIX :=   
@@ -23,7 +25,7 @@ endif
 
 ifeq ($(target),darwin)
 LDFLAGS := $(LDFLAGS) -lcblas -lblas -llapack
-CPPFLAGS := $(CPPFLAGS) -Dno_affinity -Dno_timespec -Dno_mkl -Dno_miclib \
+CPPFLAGS := $(CPPFLAGS) -Dno_affinity -Dno_timespec -Dno_mkl -Dno_miclib -Dbasic_scheduler \
  -I/System/Library/Frameworks/Accelerate.framework/Versions/Current/Frameworks/vecLib.framework/Versions/Current/Headers
 endif
 

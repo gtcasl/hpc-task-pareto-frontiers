@@ -286,10 +286,10 @@ class TaskRunner_impl : public TaskRunner
     }
     auto theTask = static_cast<TaskType*>(t);
     theTask->setup();
-    int cores = t->cpuCount();
 #pragma omp parallel
 {
 #ifdef _OPENMP
+    int cores = t->cpuCount();
     int threads = omp_get_num_threads();
     if(threads != cores){
       std::cerr << "Error: unable to set correct number of cores. Have: " 

@@ -35,6 +35,17 @@ class Matrix
   }
 
  public:
+  void
+  scaleDiagonal(int row, int col, double scale){
+    int offset = blockOffset(row,col);
+    DoubleArray block = storage_.offset(offset);
+    double* valptr = block;
+    for (int i=0; i < blockSize_; ++i){
+      *valptr *= scale;
+      valptr += blockSize_ + 1;
+    }
+  }
+
   void 
   symmetricFill(int row, int col){
     int rowStart = row * blockSize_;
@@ -69,6 +80,7 @@ class Matrix
     storage_(matrixSize*matrixSize*blockSize*blockSize)
   {
   }
+
 
   void print(const char* label = 0){
     if (label) printf("%s\n", label);
@@ -297,8 +309,11 @@ void fill(int nBlocks, int blockSize, Matrix& L, Matrix& A)
 int cholesky(int argc, char** argv)
 {
   //ALWAYS Initialize the scheduler first
+#ifdef basic_scheduler
   Scheduler* sch = new BasicScheduler;
-  //Scheduler* sch = new AdvancedScheduler;
+#else
+  Scheduler* sch = new AdvancedScheduler;
+#endif
   sch->init(argc, argv);
   // disable dynamic thread adjustment in MKL
 #ifndef no_mkl
@@ -347,6 +362,7 @@ int cholesky(int argc, char** argv)
             gemm(i,j,k,blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
           }
         }
+        //A.scaleDiagonal(i, i, 100);
       }
 
       // send A & L
@@ -365,6 +381,7 @@ int cholesky(int argc, char** argv)
 
   sch->resetIter();
 
+  #if 0
   for (int iter=0; iter < ncopies; ++iter, sch->nextIter()){
     Task* root = 0;
     if (sch->rank() == 0){
@@ -375,8 +392,8 @@ int cholesky(int argc, char** argv)
     sch->run(root);
     int nfailures = 0;
     if(sch->rank() == 1){
-      A.print("after");
-      L.print("after");
+      //A.print("after");
+      //L.print("after");
       for (int i=0; i < nBlocks; ++i){
         //just check the diagonal blocks...
         //the other blocks end up weird and transposed
@@ -399,6 +416,7 @@ int cholesky(int argc, char** argv)
       }
     }
   }
+  #endif
 
   fflush(stdout);
 
