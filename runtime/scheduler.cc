@@ -196,6 +196,7 @@ Scheduler::runWorker()
       }
       double start = getTime();
       runner->run(t, size);
+      t->notifyDone();
       double stop = getTime();
       double elapsed_seconds = stop - start;
 
@@ -253,7 +254,8 @@ uint32_t Scheduler::readMICPoweruW() const
   return power;
 }
 
-void Scheduler::overflow(int signum, siginfo_t*, void*){ 
+void 
+Scheduler::overflow(int signum, siginfo_t*, void*){ 
   if(signum == SIGALRM){
     auto power_uW = global->readMICPoweruW();
     global->cumulative_power_ += power_uW;
@@ -263,6 +265,21 @@ void Scheduler::overflow(int signum, siginfo_t*, void*){
     }
   }
 }
+
+void
+Scheduler::runSerial(Task* root)
+{
+  std::list<Task*> pending;
+  root->runSerial();
+  root->clearListeners(pending);
+  while (!pending.empty()){
+    Task* next = pending.front();
+    pending.pop_front();
+    next->runSerial();
+    next->clearListeners(pending);
+  }
+}
+
 
 class Logger{
     std::ofstream logfile_;
@@ -567,6 +584,11 @@ AdvancedScheduler::runMaster(Task* root)
 void
 BasicScheduler::runMaster(Task* root)
 {
+  if (nworkers() == 0){
+    runSerial(root);
+    return;
+  }
+
   std::list<int> availableWorkers;
   for (int i=1; i < nworkers(); ++i){ //leave off 0
     availableWorkers.push_back(i);

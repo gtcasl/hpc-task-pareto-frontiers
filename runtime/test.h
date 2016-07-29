@@ -1,3 +1,6 @@
+#ifndef task_runtime_test_h
+#define task_runtime_test_h
+
 #include <map>
 #include <scheduler.h>
 #include <task.h>
@@ -26,3 +29,4 @@ class TestRegistration {
 
 #define RegisterTest(name, fxn) TestRegistration register_##fxn(name, fxn)
 
+#endif

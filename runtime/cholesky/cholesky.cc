@@ -4,6 +4,7 @@
 #include <mkl.h>
 #endif
 #include <test.h>
+#include <matrix.h>
 
 #if CHOLESKY_DEBUG
 #define task_debug(...) printf(__VA_ARGS__)
@@ -20,126 +21,7 @@ static enum fxn_id {
   trsm_id,
 } test_ids;
 
-typedef Buffer<double> DoublePtr;
-typedef Buffer<double> DoubleArray;
-typedef Buffer<int> IntArray;
-typedef Buffer<IntArray> IntChunkArray;
-typedef Buffer<DoubleArray> DoubleChunkArray;
 
-class Matrix
-{
- private:
-  int blockOffset(int row, int col){
-    int blockNum = row*blockGridSize_ + col;
-    return blockNum*blockSize_*blockSize_;
-  }
-
- public:
-  void
-  scaleDiagonal(int row, int col, double scale){
-    int offset = blockOffset(row,col);
-    DoubleArray block = storage_.offset(offset);
-    double* valptr = block;
-    for (int i=0; i < blockSize_; ++i){
-      *valptr *= scale;
-      valptr += blockSize_ + 1;
-    }
-  }
-
-  void 
-  symmetricFill(int row, int col){
-    int rowStart = row * blockSize_;
-    int colStart = col * blockSize_;
-    int rowStop = rowStart + blockSize_;
-    int colStop = colStart + blockSize_;
-    int idx = 0;
-    int offset = blockOffset(row,col);
-    DoubleArray block = storage_.offset(offset);
-    double* valptr = block;
-    for (int i=rowStart; i != rowStop; ++i){
-      for (int j=colStart; j != colStop; ++j, ++valptr, ++idx){
-        if (i >= j){
-          double x = double(0.05 + (idx*7)%4 - (idx*5)%2) / ((idx*11)%5+0.1);
-          *valptr = x;
-        } else {
-          *valptr = 0;
-        }
-      }
-    }
-  }
-
-  Matrix(int matrixSize, int blockSize, DoubleArray storage) :
-    blockSize_(blockSize),
-    blockGridSize_(matrixSize),
-    storage_(storage)
-  {}
-
-  Matrix(int matrixSize, int blockSize) : 
-    blockSize_(blockSize), 
-    blockGridSize_(matrixSize),
-    storage_(matrixSize*matrixSize*blockSize*blockSize)
-  {
-  }
-
-
-  void print(const char* label = 0){
-    if (label) printf("%s\n", label);
-    int blockStorageSize = blockSize_*blockSize_;
-    int nrows = blockSize_ * blockGridSize_;
-    int ncols = nrows;
-    int lastRowBlock = 0;
-    for (int i=0; i < nrows; ++i){
-      int lastColBlock = 0;
-      int iBlock = i / blockSize_;
-      int iOffset = i % blockSize_;
-      if (iBlock != lastRowBlock){
-        printf("\n");
-        lastRowBlock = iBlock;
-      }
-      int offset = (iBlock*blockGridSize_*blockStorageSize) + iOffset*blockSize_;
-      double* ptr = storage_.offset(offset);
-      for (int j=0; j < ncols; ++j, ++ptr){
-        int jBlock = j / blockSize_;
-        int jOffset = j % blockSize_;
-        if (jBlock != lastColBlock){
-          int offset = (iBlock*blockGridSize_+jBlock)*blockStorageSize + (iOffset*blockSize_ + jOffset);
-          //printf("Hopping to block %d,%d at offset %d\n", iBlock, jBlock, offset);
-          printf("   ");
-          ptr = storage_.offset(offset);
-          lastColBlock = jBlock;
-        }
-        //printf("Pointer %p is %f\n", ptr, *ptr);
-        printf("%6.2f ", *ptr);
-      }
-      printf("\n");
-    }
-    printf("\n");
-  }
-
-  int
-  blockGridSize() const {
-    return blockGridSize_;
-  }
-  
-  int 
-  blockSize() const {
-    return blockSize_;
-  }
-
-  DoubleArray
-  block(int i, int j){
-    return storage_.offset(blockOffset(i,j));
-  }
-  double* storageAddr() {
-    double* res = storage_;
-    return res;
-  }
-
- private:
-  int blockSize_;
-  int blockGridSize_;
-  DoubleArray storage_;
-};
 
 void
 trsm(int k, int m, int size, DoubleArray A, DoubleArray B)
@@ -208,7 +90,7 @@ syrk(
   }
 }
 
-void
+static void
 gemm(
   int m, int n, int k,
   int size,
@@ -362,7 +244,7 @@ int cholesky(int argc, char** argv)
             gemm(i,j,k,blockSize, false, true, 1.0, 1.0, Aij, Lik, Ljk);
           }
         }
-        //A.scaleDiagonal(i, i, 100);
+        A.scaleDiagonal(i, i, 100);
       }
 
       // send A & L
@@ -381,7 +263,6 @@ int cholesky(int argc, char** argv)
 
   sch->resetIter();
 
-  #if 0
   for (int iter=0; iter < ncopies; ++iter, sch->nextIter()){
     Task* root = 0;
     if (sch->rank() == 0){
@@ -390,6 +271,7 @@ int cholesky(int argc, char** argv)
     MPI_Barrier(MPI_COMM_WORLD);
 
     sch->run(root);
+  #if 0
     int nfailures = 0;
     if(sch->rank() == 1){
       //A.print("after");
@@ -415,8 +297,8 @@ int cholesky(int argc, char** argv)
         printf("Cholesky passed validation test on iteration %d\n", iter);
       }
     }
-  }
   #endif
+  }
 
   fflush(stdout);
 

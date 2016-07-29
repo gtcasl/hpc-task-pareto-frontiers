@@ -74,6 +74,8 @@ class Task {
   int typeID() const { return typeID_; }
 
   void run(int worker, int start_tick);
+
+  void runSerial();
   
   void setup();
   
@@ -298,7 +300,6 @@ class TaskRunner_impl : public TaskRunner
 #endif
 }
     theTask->run();
-    theTask->notifyDone();
   }
 };
 

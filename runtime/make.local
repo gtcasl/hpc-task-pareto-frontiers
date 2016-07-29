@@ -1,5 +1,8 @@
 TARGET := run
-SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc
+SRC := $(shell ls *.cc) \
+  $(shell ls cg/*.cc) \
+  cholesky/cholesky.cc \
+  lu/lu.cc
 HEADERS := $(shell ls *.h)
 
 #target := gcc
@@ -14,7 +17,7 @@ MPI := $(HOME)/Programs/install/mpich/gcc48/bin
 CXX := mpicxx
 CC := mpicc
 CXXFLAGS := -fPIC -O0 -g -w -std=c++11
-CPPFLAGS := -I. 
+CPPFLAGS := -I. -DCHOLESKY_DEBUG
 LIBDIR :=   
 PREFIX :=   
 LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib

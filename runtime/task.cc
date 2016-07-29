@@ -137,6 +137,18 @@ Task::getNumThreads() const
   return CPU_COUNT(&cpumask_);
 }
 
+void
+Task::runSerial()
+{
+  auto runner = TaskRunner::get(typeID());
+  if (!runner){
+    fprintf(stderr, "No runner registered for type ID %d\n", typeID());
+    abort();
+  }
+  double start = getTime();
+  runner->run(this, mySize_);
+}
+
 double Task::estimateTime() const
 {
   double my_time = TaskRunner::get_min_time(typeID_);

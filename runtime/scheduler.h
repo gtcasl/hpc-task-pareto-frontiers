@@ -108,6 +108,9 @@ class Scheduler
   uint32_t power_limit_; // I think the default of 350 is way above the TDP
   uint32_t available_power_; // amount of power that can be used at the moment
 
+ protected:
+  void runSerial(Task* task);
+
  private:
   void addNeededBuffer(BufferBase* buf, size_t size);
 
