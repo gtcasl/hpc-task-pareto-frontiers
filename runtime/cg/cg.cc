@@ -11,6 +11,13 @@ typedef Buffer<int> IntArray;
 typedef Buffer<IntArray> IntChunkArray;
 typedef Buffer<DoubleArray> DoubleChunkArray;
 
+void fake_vdSub(int n, double* a, double* b, double* y)
+{
+  for (int i=0; i < n; ++i){
+    y[i] = a[i] - b[i];
+  }
+}
+
 
 #define debug(x) printf(#x "\n");
 #undef debug

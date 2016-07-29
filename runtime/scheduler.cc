@@ -17,12 +17,13 @@
 #include <unordered_set>
 #include <sys/types.h>
 #include <signal.h>
+#include <cstdlib>
 
 
 #define __GNU_SOURCE
 #include <sched.h>
 
-#define error(...) fprintf(stderr, __VA_ARGS__)
+#define error(...) fprintf(stderr, __VA_ARGS__); perror(NULL); abort()
 
 #define DEFAULT_NUM_THREADS 228
 
@@ -54,7 +55,7 @@ Scheduler::init(int argc, char** argv)
   }
 }
 
-static const char* mmap_fname = "/mmap_heap";
+static const char* mmap_fname = "wtf_mmap_heap";
 
 void
 Scheduler::addNeededBuffer(BufferBase* buf, size_t size){
@@ -104,7 +105,7 @@ Scheduler::allocateHeap(int ncopies)
   mmap_size_ = total_buffer_size_ * ncopies;
 
   int fd;
-  if(rank_ == 0 || rank_ == 1){
+  if(rank_ == 0){
     int res = shm_unlink(mmap_fname);
     fd = shm_open(mmap_fname, O_RDWR | O_CREAT | O_EXCL, S_IRWXU);
     if(fd < 0){
@@ -115,7 +116,7 @@ Scheduler::allocateHeap(int ncopies)
   }
   MPI_Barrier(MPI_COMM_WORLD);
 
-  if(rank_ != 0 && rank_ != 1){
+  if(rank_ != 0){
     fd = shm_open(mmap_fname, O_RDWR, S_IRWXU);
     if (fd < 0){
       error("invalid fd %d shm_open on %s: error=%d: rank %d\n",

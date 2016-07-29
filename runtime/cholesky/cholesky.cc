@@ -11,6 +11,8 @@
 #define task_debug(...) 
 #endif
 
+static int static_info;
+
 static enum fxn_id {
   potrf_id,
   gemm_id,
@@ -295,8 +297,8 @@ void fill(int nBlocks, int blockSize, Matrix& L, Matrix& A)
 int cholesky(int argc, char** argv)
 {
   //ALWAYS Initialize the scheduler first
-  //Scheduler* sch = new BasicScheduler;
-  Scheduler* sch = new AdvancedScheduler;
+  Scheduler* sch = new BasicScheduler;
+  //Scheduler* sch = new AdvancedScheduler;
   sch->init(argc, argv);
   // disable dynamic thread adjustment in MKL
 #ifndef no_mkl
@@ -373,15 +375,15 @@ int cholesky(int argc, char** argv)
     sch->run(root);
     int nfailures = 0;
     if(sch->rank() == 1){
-      //A.print("after");
-      //L.print("after");
+      A.print("after");
+      L.print("after");
       for (int i=0; i < nBlocks; ++i){
         //just check the diagonal blocks...
         //the other blocks end up weird and transposed
         DoubleArray Aii = A.block(i,i);
         DoubleArray Lii = L.block(i,i);
         int nelems = blockSize * blockSize;
-        double tol = 1e-4;
+        double tol = 1e-2;
         for (int j=0; j < nelems; ++j){
           double delta = fabs(Aii[j] - Lii[j]);
           if (delta > tol){

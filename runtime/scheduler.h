@@ -1,6 +1,8 @@
 #ifndef _test_runtime_scheduler_h_
 #define _test_runtime_scheduler_h_
 
+#define heisenbug printf("heisenbug %s:%d\n", __FILE__, __LINE__)
+
 #include <vector>
 #include <task.h>
 #include <unordered_set>
