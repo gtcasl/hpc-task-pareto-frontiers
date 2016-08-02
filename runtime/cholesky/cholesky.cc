@@ -7,6 +7,7 @@
 
 #include "cholesky.h"
 
+//#define CHOLESKY_DEBUG 1
 #if CHOLESKY_DEBUG
 #define task_debug(...) printf(__VA_ARGS__)
 #else
@@ -30,6 +31,7 @@ trsm(int k, int m, int size, int lda, DoubleArray A, DoubleArray B)
     size, size, alpha,
     A, lda,
     B, lda);
+  task_debug("TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
 }
 
 void
@@ -43,6 +45,7 @@ potrf(int k, int size, int lda, DoubleArray A)
     std::cout << "A[" << info << "]: " << A[info] << std::endl;
     abort();
   }
+  task_debug("POTRF A(%d,%d)\n", k, k);
 }
 
 void
@@ -62,6 +65,7 @@ syrk(
   cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, size, size, 
     alpha, A, lda,
     beta, C, lda);
+  task_debug("SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, n, n);
 }
 
 void
@@ -84,6 +88,8 @@ gemm(
     alpha, left, lda, 
     right, lda, 
     beta, product, lda);
+  task_debug("GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
+    m, n, m, k, k, n);
 }
 
 class TaskMap {
@@ -182,6 +188,10 @@ int cholesky(Scheduler* sch, int argc, char** argv)
     return -1;
   }
 
+  if(sch->rank() == 0){
+    std::cout << "Initializing cholesky" << std::endl;
+  }
+
   int nBlocks = atoi(argv[1]);
   int blockSize = atoi(argv[2]);
   auto nrows = nBlocks * blockSize;
@@ -192,10 +202,14 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   sch->allocateHeap(ncopies);
 
   for (int c=0; c < ncopies; ++c, sch->nextIter()){
-    if (sch->rank() == 0){
-
+    if (sch->rank() == 1){
+#ifdef _OPENMP
+      omp_set_num_threads(20);
+#endif
+      std::cout << "Filling" << std::endl;
       L.symmetricFill();
       A.randomFill();
+      std::cout << "Blas" << std::endl;
       // tmp = A' x L
       double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
       cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, nrows, nrows, nrows,
@@ -208,18 +222,10 @@ int cholesky(Scheduler* sch, int argc, char** argv)
       free(tmp);
       // A = copy(L)
       cblas_dcopy(nrows * nrows, L.storageAddr(), 1, A.storageAddr(), 1);
-
-      // send A & L
-      MPI_Send(A.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
-      MPI_Send(L.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 1, 0, MPI_COMM_WORLD);
+      std::cout << "Blas done" << std::endl;
     }
-    if(sch->rank() == 1){
-      // recv A & L
-      MPI_Recv(A.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-      MPI_Recv(L.storageAddr(), nBlocks * nBlocks * blockSize * blockSize, MPI_DOUBLE, 0, MPI_ANY_TAG, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
   }
+  // return 0;
 
   sch->resetIter();
 
@@ -229,21 +235,27 @@ int cholesky(Scheduler* sch, int argc, char** argv)
       root = initDag(L);
       std::cout << "Running Cholesky\n";
     }
-    MPI_Barrier(MPI_COMM_WORLD);
 
     sch->run(root);
     int nfailures = 0;
     if(sch->rank() == 1){
-      std::cout << "Performing validation\n";
+      std::cout << "Performing validation" << std::endl;
+#ifdef _OPENMP
+  omp_set_num_threads(20);
+#endif
+#pragma omp parallel for
       for (int i=0; i < nrows; ++i){
         for (int j=i+1; j < nrows; ++j){
           int toIdx = j*nrows + i;
           L.storageAddr()[toIdx] = 0.0;
         }
       }
+      std::cout << "blas" << std::endl;
       double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
       cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, nrows, nrows,
                   1.0, L.storageAddr(), nrows, 0.0, tmp, nrows);
+      std::cout << "test" << std::endl;
+#pragma omp parallel for
       for(int i = 0; i < nrows; i++){
         for(int j = 0; j < i+1; j++){
           double tol = 1e-4;

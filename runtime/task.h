@@ -135,6 +135,7 @@ class Task {
   int worker_;
   bool done_;
   cpu_set_t cpumask_;
+  cpu_set_t full_mask_;
   MPI_Request done_request_;
   int rc_;
   /**

@@ -34,6 +34,10 @@ Task::Task(int mySize, int typeID) :
   done_(false)
 {
   CPU_ZERO(&cpumask_);
+  CPU_ZERO(&full_mask_);
+  for(int i = 0; i < NUM_THREADS; i++){
+    CPU_SET(i, &full_mask_);
+  }
 }
 
 void
@@ -88,6 +92,7 @@ Task::setup()
 void
 Task::notifyDone()
 {
+  sched_setaffinity(0, sizeof(cpu_set_t), &full_mask_);
   int rc = 0;
   int parent = 0;
   MPI_Send(&rc, 1, MPI_INT, parent, done_tag, MPI_COMM_WORLD);

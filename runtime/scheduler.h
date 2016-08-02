@@ -17,6 +17,18 @@ class BufferBase
   void* buffer;
 };
 
+struct CPUList{
+  int num_available;
+  std::vector<std::pair<int,bool>> cpus; // pair(cpu_id, available?)
+  CPUList() {}
+  CPUList(int na) : num_available{na} {
+    for(int i = 0; i < num_available; i++){
+      auto cpuid = i % 57 * 4 + i / 57;
+      cpus.emplace_back(cpuid, true);
+    }
+  }
+};
+
 class Scheduler
 {
   template <class T> friend class Buffer;
@@ -57,7 +69,7 @@ class Scheduler
   }
 
   int numAvailableCores() const {
-    return available_cores_.size();
+    return available_cores_.num_available;
   }
 
   void returnCpu(int cpu);
@@ -143,7 +155,7 @@ class Scheduler
   int rank_;
   int nproc_;
 
-  std::unordered_set<int> available_cores_;
+  CPUList available_cores_;
 
 #ifndef no_miclib
   struct mic_device* mic_device_;

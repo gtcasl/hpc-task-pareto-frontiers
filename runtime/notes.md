@@ -1,4 +1,13 @@
 # Todo: Newest near top
+Use `pragma offload` for everything. A task gets offloaded to the device. The setup phase, that allocates the heap, should have to setup the initial data. The `allocateHeap` function would be called after all buffers have been initialized with the problem data, and would marshal it all and send it across.
+
+Could we run with just two MPI ranks, one on the host, one on the device. Then we launch tasks dynamically from the manager task on the device. How is this different than running everything natively?
+Alternatively, we could launch EVERYTHING offload from the host. That requires synchronizing the data transfer.
+
+Why not just run everything on the device? Including the scheduler.
+
+What happens when we want to schedule a task? Do we do better to fire right away or wait until more threads are available? Whenever a task finishes and frees its threads, all pending tasks reevaluate the best configuration for the given number of available threads. Could there exist times when waiting (and not scheduling) would be better than to scheduler immediately and probably perform worse?
+
 The baseline scheduler (and the advanced one, by extension), messes up the data. However, the profiling one and the sequential one seem to work out ok. Also it's only for some configurations its borked. I don't get it.
 
 *For `spmv`, there is not a direct relationship between the number of non-zeros (or the histogram of non-zeros) to the performance of the kernel.*

@@ -42,6 +42,7 @@ class Matrix
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0,1);
     int nrows = blockSize_ * blockGridSize_;
+//#pragma omp parallel for
     for(int i = 0; i < nrows * nrows; i++){
       //double x = double(0.05 + (i*7)%4 - (i*5)%2) / ((i*11)%5+0.1);
       double x = dis(gen);
@@ -55,6 +56,7 @@ class Matrix
     std::mt19937 gen(rd());
     std::uniform_real_distribution<> dis(0,1);
     int nrows = blockSize_ * blockGridSize_;
+//#pragma omp parallel for
     for(int i = 0; i < nrows; i++){
       for(int j = 0; j < nrows; j++){
         int idx = i*nrows + j;
