@@ -1,12 +1,6 @@
 #ifndef _cholesky_h_
 #define _cholesky_h_
 
-typedef Buffer<double> DoublePtr;
-typedef Buffer<double> DoubleArray;
-typedef Buffer<int> IntArray;
-typedef Buffer<IntArray> IntChunkArray;
-typedef Buffer<DoubleArray> DoubleChunkArray;
-
 enum fxn_id {
   potrf_id,
   gemm_id,
@@ -22,10 +16,10 @@ enum fxn_id {
   gemmprofile_id,
 } ;
 
-void trsm(int k, int m, int size, int lda, DoubleArray A, DoubleArray B);
-void potrf(int k, int size, int lda, DoubleArray A);
-void syrk(int k, int n, int size, int lda, DoubleArray C, DoubleArray A);
-void gemm(int m, int n, int k, int size, int lda, bool ltrans,  bool rtrans, double alpha, double beta, DoubleArray product,  DoubleArray left,  DoubleArray right);
+void trsm(int k, int m, int size, int lda, double* A, double* B);
+void potrf(int k, int size, int lda, double* A);
+void syrk(int k, int n, int size, int lda, double* C, double* A);
+void gemm(int m, int n, int k, int size, int lda, bool ltrans,  bool rtrans, double alpha, double beta, double* product,  double* left,  double* right);
 
 class Matrix
 {
@@ -70,17 +64,11 @@ class Matrix
     }
   }
 
-  Matrix(int matrixSize, int blockSize, DoubleArray storage) :
-    blockSize_(blockSize),
-    blockGridSize_(matrixSize),
-    storage_(storage)
-  {}
-
   Matrix(int matrixSize, int blockSize) : 
     blockSize_(blockSize), 
-    blockGridSize_(matrixSize),
-    storage_(matrixSize*matrixSize*blockSize*blockSize)
+    blockGridSize_(matrixSize)
   {
+    storage_ = (double*) mkl_malloc(matrixSize * matrixSize * blockSize * blockSize * sizeof(double), 64);
   }
 
   void print(const char* label = 0){
@@ -113,19 +101,19 @@ class Matrix
     return blockSize_;
   }
 
-  DoubleArray
+  double*
   block(int i, int j){
-    return storage_.offset(blockOffset(i,j));
-  }
-  double* storageAddr() {
-    double* res = storage_;
-    return res;
+    return storage_ + blockOffset(i,j);
   }
 
- private:
+  double*
+  storageAddr(){
+    return storage_;
+  }
+
   int blockSize_;
   int blockGridSize_;
-  DoubleArray storage_;
+  double* storage_;
 };
 
 

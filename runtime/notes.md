@@ -1,4 +1,11 @@
 # Todo: Newest near top
+Make a bunch of worker threads on the host. If a task needs to be launched, have the thread launch the task synchronously. It can then report back using all the appropriate synchronization primitives (ie, wait, checkdone, etc).
+
+*NEED TO MEMALIGN TO 64*
+
+
+
+
 Use `pragma offload` for everything. A task gets offloaded to the device. The setup phase, that allocates the heap, should have to setup the initial data. The `allocateHeap` function would be called after all buffers have been initialized with the problem data, and would marshal it all and send it across.
 
 Could we run with just two MPI ranks, one on the host, one on the device. Then we launch tasks dynamically from the manager task on the device. How is this different than running everything natively?

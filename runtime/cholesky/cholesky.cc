@@ -15,9 +15,15 @@
 #endif
 
 void
-trsm(int k, int m, int size, int lda, DoubleArray A, DoubleArray B)
+trsm(int k, int m, int size, int lda, double* A, double* B)
 {
   task_debug("TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
+#pragma offload target(mic:0) \
+  in(size) \
+  in(lda) \
+  in(A:length(0) alloc_if(0) free_if(0)) \
+  in(B:length(0) alloc_if(0) free_if(0))
+  {
   // A = Akk
   // B = Amk
   //solve AX = B
@@ -31,11 +37,12 @@ trsm(int k, int m, int size, int lda, DoubleArray A, DoubleArray B)
     size, size, alpha,
     A, lda,
     B, lda);
+  }
   task_debug("TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
 }
 
 void
-potrf(int k, int size, int lda, DoubleArray A)
+potrf(int k, int size, int lda, double* A)
 {
   task_debug("POTRF A(%d,%d)\n", k, k);
   char uplo = 'L';
@@ -53,8 +60,8 @@ syrk(
   int k, int n,
   int size,
   int lda,
-  DoubleArray C,
-  DoubleArray A)
+  double* C,
+  double* A)
 {
   // C=Ann
   // A=Ank
@@ -77,9 +84,9 @@ gemm(
   bool rtrans,
   double alpha,
   double beta,
-  DoubleArray product, 
-  DoubleArray left, 
-  DoubleArray right){
+  double* product, 
+  double* left, 
+  double* right){
   task_debug("GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
     m, n, m, k, k, n);
   CBLAS_TRANSPOSE lt = ltrans ? CblasNoTrans : CblasTrans; //GD fortran
@@ -120,7 +127,7 @@ initDag(Matrix& A)
   TaskMap gemms(nBlocks);
    
   for (int k=0; k < nBlocks; ++k){
-    DoubleArray Akk = A.block(k,k);
+    double* Akk = A.block(k,k);
     Task* diag = new_task(potrf, k, blockSize, lda, Akk);
     dep_debug("POTRF (%d,%d) = %p\n", k,k,diag);
     pots(k,k) = diag;
@@ -131,7 +138,7 @@ initDag(Matrix& A)
       diag->dependsOn(syrs(k,k));
     }
     for (int m=k+1; m < nBlocks; ++m){
-      DoubleArray Amk = A.block(m,k);
+      double* Amk = A.block(m,k);
       Task* solve = new_task(trsm, k, m, blockSize, lda, Akk, Amk);
       dep_debug(" TRSM (%d,%d) = %p\n", m, k, solve);
       trs(m,k) = solve;
@@ -141,8 +148,8 @@ initDag(Matrix& A)
       }
     }
     for (int n=k+1; n < nBlocks; ++n){
-      DoubleArray Ann = A.block(n,n);
-      DoubleArray Ank = A.block(n,k);
+      double* Ann = A.block(n,n);
+      double* Ank = A.block(n,k);
       //Amm -= Amk * Amk^T
       //Ank ends up transposed from the DTRSM solve
       Task* symmUpd = new_task(syrk, k, n, blockSize, lda, Ann, Ank);
@@ -151,8 +158,8 @@ initDag(Matrix& A)
       symmUpd->dependsOn(syrs(n,n)); //depend on prev syrk here
       syrs(n,n) = symmUpd;
       for (int m=n+1; m < nBlocks; ++m){
-        DoubleArray Amk = A.block(m,k);
-        DoubleArray Amn = A.block(m,n);
+        double* Amk = A.block(m,k);
+        double* Amn = A.block(m,n);
         //because of how awesome BLAS is, Ank is transposed backwards
         Task* mult = new_task(gemm, m, n, k, blockSize, lda, true, false, -1.0, 1.0, Amn, Amk, Ank);
         dep_debug(" GEMM (%d,%d) = %p\n", m,n,mult);
@@ -173,24 +180,20 @@ int cholesky(Scheduler* sch, int argc, char** argv)
 #endif
 
   RegisterTask(potrf, void, int, int,
-    int, DoubleArray);
+    int, double*);
   RegisterTask(trsm,  void, int, int, int,
-    int, DoubleArray, DoubleArray);
+    int, double*, double*);
   RegisterTask(syrk,  void, int, int, int,
-    int, DoubleArray, DoubleArray);
+    int, double*, double*);
   RegisterTask(gemm,  void, int, int, int, int,
-    int, bool, bool, double, double, DoubleArray, DoubleArray, DoubleArray);
+    int, bool, bool, double, double, double*, double*, double*);
 
   if(argc != 3){
-    if(sch->rank() == 0){
-      std::cerr << "Usage: " << argv[0] << " <nblocks> <blocksize>" << std::endl;
-    }
+    std::cerr << "Usage: " << argv[0] << " <nblocks> <blocksize>" << std::endl;
     return -1;
   }
 
-  if(sch->rank() == 0){
-    std::cout << "Initializing cholesky" << std::endl;
-  }
+  std::cout << "Initializing cholesky" << std::endl;
 
   int nBlocks = atoi(argv[1]);
   int blockSize = atoi(argv[2]);
@@ -199,86 +202,80 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   Matrix L(nBlocks, blockSize);
 
   int ncopies = 1;
-  sch->allocateHeap(ncopies);
 
   for (int c=0; c < ncopies; ++c, sch->nextIter()){
-    if (sch->rank() == 1){
 #ifdef _OPENMP
-      omp_set_num_threads(20);
+    omp_set_num_threads(20);
 #endif
-      std::cout << "Filling" << std::endl;
-      L.symmetricFill();
-      A.randomFill();
-      std::cout << "Blas" << std::endl;
-      // tmp = A' x L
-      double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
-      cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, nrows, nrows, nrows,
-                  1.0, A.storageAddr(), nrows, L.storageAddr(), nrows, 0.0,
-                  tmp, nrows);
-      // L = tmp x A
-      cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, nrows, nrows, nrows,
-                  1.0, tmp, nrows, A.storageAddr(), nrows, 0.0,
-                  L.storageAddr(), nrows);
-      free(tmp);
-      // A = copy(L)
-      cblas_dcopy(nrows * nrows, L.storageAddr(), 1, A.storageAddr(), 1);
-      std::cout << "Blas done" << std::endl;
-    }
+    std::cout << "Filling" << std::endl;
+    L.symmetricFill();
+    A.randomFill();
+    std::cout << "Blas" << std::endl;
+    // tmp = A' x L
+    double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
+    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, nrows, nrows, nrows,
+                1.0, A.storageAddr(), nrows, L.storageAddr(), nrows, 0.0,
+                tmp, nrows);
+    // L = tmp x A
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, nrows, nrows, nrows,
+                1.0, tmp, nrows, A.storageAddr(), nrows, 0.0,
+                L.storageAddr(), nrows);
+    free(tmp);
+    // A = copy(L)
+    cblas_dcopy(nrows * nrows, L.storageAddr(), 1, A.storageAddr(), 1);
+    std::cout << "Blas done" << std::endl;
   }
   // return 0;
 
-  sch->resetIter();
+#pragma offload_transfer target(mic:0) \
+  in(L.storage_ : length(nrows * nrows) align(64) free_if(0) alloc_if(1))
 
   for (int iter=0; iter < ncopies; ++iter, sch->nextIter()){
     Task* root = 0;
-    if (sch->rank() == 0){
-      root = initDag(L);
-      std::cout << "Running Cholesky\n";
-    }
+    root = initDag(L);
+    std::cout << "Running Cholesky\n";
 
     sch->run(root);
     int nfailures = 0;
-    if(sch->rank() == 1){
-      std::cout << "Performing validation" << std::endl;
+    std::cout << "Performing validation" << std::endl;
+    /*
 #ifdef _OPENMP
-  omp_set_num_threads(20);
+    omp_set_num_threads(20);
 #endif
-#pragma omp parallel for
-      for (int i=0; i < nrows; ++i){
-        for (int j=i+1; j < nrows; ++j){
-          int toIdx = j*nrows + i;
-          L.storageAddr()[toIdx] = 0.0;
-        }
-      }
-      std::cout << "blas" << std::endl;
-      double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
-      cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, nrows, nrows,
-                  1.0, L.storageAddr(), nrows, 0.0, tmp, nrows);
-      std::cout << "test" << std::endl;
-#pragma omp parallel for
-      for(int i = 0; i < nrows; i++){
-        for(int j = 0; j < i+1; j++){
-          double tol = 1e-4;
-          auto gold_val = A.storageAddr()[j*nrows + i];
-          auto test_val = tmp[j*nrows + i];
-          if(fabs(gold_val - test_val) > tol){
-            nfailures++;
-          }
-        }
-      }
-      free(tmp);
-      if (nfailures){
-        printf("Cholesky failed with %d wrong elements on iteration %d\n",
-          nfailures, iter);
-      } else {
-        printf("Cholesky passed validation test on iteration %d\n", iter);
+    for (int i=0; i < nrows; ++i){
+      for (int j=i+1; j < nrows; ++j){
+        int toIdx = j*nrows + i;
+        L.storageAddr()[toIdx] = 0.0;
       }
     }
+    std::cout << "blas" << std::endl;
+    double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
+    cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, nrows, nrows,
+                1.0, L.storageAddr(), nrows, 0.0, tmp, nrows);
+    std::cout << "test" << std::endl;
+#pragma omp parallel for
+    for(int i = 0; i < nrows; i++){
+      for(int j = 0; j < i+1; j++){
+        double tol = 1e-4;
+        auto gold_val = A.storageAddr()[j*nrows + i];
+        auto test_val = tmp[j*nrows + i];
+        if(fabs(gold_val - test_val) > tol){
+          nfailures++;
+        }
+      }
+    }
+    free(tmp);
+    if (nfailures){
+      printf("Cholesky failed with %d wrong elements on iteration %d\n",
+        nfailures, iter);
+    } else {
+      printf("Cholesky passed validation test on iteration %d\n", iter);
+    }
+  }
+  */
   }
 
   fflush(stdout);
-
-  sch->deallocateHeap();
 
   return 0;
 }
