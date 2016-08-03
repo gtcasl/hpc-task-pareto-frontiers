@@ -70,5 +70,10 @@ class SequentialScheduler : public Scheduler
   void runMaster(Task* root);
 };
 
+class BaselineScheduler : public Scheduler
+{
+  void runMaster(Task* root);
+};
+
 #endif
 
