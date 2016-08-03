@@ -75,5 +75,10 @@ class BaselineScheduler : public Scheduler
   void runMaster(Task* root);
 };
 
+class AdvancedScheduler : public Scheduler
+{
+  void runMaster(Task* root);
+};
+
 #endif
 

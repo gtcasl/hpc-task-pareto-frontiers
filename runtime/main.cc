@@ -16,6 +16,8 @@ int main(int argc, char** argv)
           scheduler.reset(new BaselineScheduler);
         } else if(argstring == "sequential"){
           scheduler.reset(new SequentialScheduler);
+        } else if(argstring == "advanced"){
+          scheduler.reset(new AdvancedScheduler);
         } else {
           std::cerr << "Invalid scheduler type. Try 'basic', 'advanced', or 'profile'." << std::endl;
           return -1;
