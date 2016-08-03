@@ -32,9 +32,6 @@ initDag(int width)
 
 int wideDAG(Scheduler* sch, int argc, char** argv)
 {
-  RegisterTask(wide,
-    void, int, int, int);
-  
   if(argc != 2){
     std::cerr << "Usage: " << argv[0] << " <# concurrent tasks>" << std::endl;
     return -1;

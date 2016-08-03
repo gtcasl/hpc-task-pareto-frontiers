@@ -6,24 +6,11 @@
 
 int main(int argc, char** argv)
 {
-  std::unique_ptr<Scheduler> scheduler = nullptr;
+  std::unique_ptr<Scheduler> scheduler(new SequentialScheduler());
   int opt;
   while((opt = getopt(argc, argv, "s:h")) != -1){
     switch(opt) {
       case 's':{
-        std::string argstring{optarg};
-        if(argstring == "baseline"){
-          scheduler.reset(new BaselineScheduler);
-        } else if(argstring == "sequential"){
-          scheduler.reset(new SequentialScheduler);
-        } else if(argstring == "advanced"){
-          scheduler.reset(new AdvancedScheduler);
-        } else if(argstring == "profile"){
-          scheduler.reset(new ProfilingScheduler);
-        } else {
-          std::cerr << "Invalid scheduler type. Try 'basic', 'advanced', or 'profile'." << std::endl;
-          return -1;
-        }
       } break;
       case 'h':
       default:{
@@ -31,10 +18,6 @@ int main(int argc, char** argv)
         return 0;
       }
     }
-  }
-
-  if(!scheduler){
-    scheduler.reset(new AdvancedScheduler);
   }
 
   if (optind == argc){

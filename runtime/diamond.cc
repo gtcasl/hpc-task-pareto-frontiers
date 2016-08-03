@@ -18,7 +18,7 @@ enum function_id {
 Task* 
 dummyTask(int a, int b, int c)
 {
-  Task* t = make_task(test, test_id, std::make_tuple(a,b,c));
+  Task* t = new_task(test, a, b, c);
   return t;
 }
 
@@ -41,9 +41,6 @@ initDag()
 
 int diamond(Scheduler* sch, int argc, char** argv)
 {
-  RegisterTask(test,
-    void, int, int, int);
-
   Task* root = initDag();
 
   sch->run(root);

@@ -1,4 +1,11 @@
 # Todo: Newest near top
+Ok no more MPI garbage. Steps:
+1. Write simple sequential scheduler. While there are tasks, this scheduler makes a thread to run the task then sits on `pthread_join` until it's done. Then it goes to the next one.
+2. Write a more complicated scheduler, launching as many tasks as possible and checking for completion using nonblocking joins.
+
+
+
+
 Make a bunch of worker threads on the host. If a task needs to be launched, have the thread launch the task synchronously. It can then report back using all the appropriate synchronization primitives (ie, wait, checkdone, etc).
 
 *NEED TO MEMALIGN TO 64*
