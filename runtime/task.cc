@@ -5,6 +5,7 @@
 #endif
 #include <iostream>
 #include <limits>
+#include <mkl.h>
 
 std::map<int,const char*> Names;
 std::map<int,std::vector<double> > Times;
@@ -56,10 +57,13 @@ void
 Task::setup()
 {
   nthread_ = CPU_COUNT(&cpumask_);
+  mkl_set_num_threads(nthread_);
+#pragma offload target(mic:0)
+{
+  //mkl_set_dynamic(0);
   sched_setaffinity(0, sizeof(cpu_set_t), &cpumask_);
-#ifdef _OPENMP
-  omp_set_num_threads(nthread_);
-#endif
+}
+
 }
 
 void
