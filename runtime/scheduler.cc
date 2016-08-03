@@ -17,6 +17,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <time.h>
+#include <miclib.h>
 
 
 #define __GNU_SOURCE
@@ -27,6 +28,30 @@
 #define DEFAULT_NUM_THREADS 228
 
 Scheduler* Scheduler::global = 0;
+
+Scheduler::~Scheduler(){
+  global = 0;
+  mic_close_device(mic_device_);
+}
+
+Scheduler::Scheduler() :
+  cumulative_power_(0),
+  num_power_samples_(0),
+  max_power_(0),
+  power_limit_(1000.0),
+  available_power_(power_limit_)
+{
+  if (global){
+    fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
+    abort();
+  }
+  global = this;
+  // initialize power measurement
+  if(mic_open_device(&mic_device_, 0) != E_MIC_SUCCESS){
+    std::cerr << "Error: Unable to open MIC" << std::endl;
+    abort();
+  }
+}
 
 void 
 Scheduler::init(int argc, char** argv)

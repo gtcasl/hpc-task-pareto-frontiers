@@ -19,11 +19,9 @@ trsm(int k, int m, int size, int lda, double* A, double* B)
 {
   task_debug("TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
 #pragma offload target(mic:0) \
-  in(size) \
-  in(lda) \
   in(A:length(0) alloc_if(0) free_if(0)) \
   in(B:length(0) alloc_if(0) free_if(0))
-  {
+{
   // A = Akk
   // B = Amk
   //solve AX = B
@@ -37,7 +35,7 @@ trsm(int k, int m, int size, int lda, double* A, double* B)
     size, size, alpha,
     A, lda,
     B, lda);
-  }
+}
   task_debug("TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
 }
 
@@ -46,7 +44,13 @@ potrf(int k, int size, int lda, double* A)
 {
   task_debug("POTRF A(%d,%d)\n", k, k);
   char uplo = 'L';
-  int info = LAPACKE_dpotrf(LAPACK_COL_MAJOR, uplo, size, A, lda);
+  int info;
+#pragma offload target(mic:0) \
+  in(A : length(0) alloc_if(0) free_if(0)) \
+  out(info)
+{
+  info = LAPACKE_dpotrf(LAPACK_COL_MAJOR, uplo, size, A, lda);
+}
   if (info != 0){
     fprintf(stderr, "FAILURE on DPOTRF: %d\n", info);
     std::cout << "A[" << info << "]: " << A[info] << std::endl;
@@ -69,9 +73,14 @@ syrk(
   task_debug("SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, n, n);
   auto alpha = -1.0;
   auto beta = 1.0;
+#pragma offload target(mic:0) \
+  in(A : length(0) alloc_if(0) free_if(0)) \
+  in(C : length(0) alloc_if(0) free_if(0)) 
+{
   cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, size, size, 
     alpha, A, lda,
     beta, C, lda);
+}
   task_debug("SYRK  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", n, n, n, k, n, n);
 }
 
@@ -91,10 +100,16 @@ gemm(
     m, n, m, k, k, n);
   CBLAS_TRANSPOSE lt = ltrans ? CblasNoTrans : CblasTrans; //GD fortran
   CBLAS_TRANSPOSE rt = rtrans ? CblasNoTrans : CblasTrans; //GD fortran
+#pragma offload target(mic:0) \
+  in(left : length(0) alloc_if(0) free_if(0)) \
+  in(right : length(0) alloc_if(0) free_if(0)) \
+  in(product : length(0) alloc_if(0) free_if(0))
+{
   cblas_dgemm(CblasColMajor, lt, rt, size, size, size,
     alpha, left, lda, 
     right, lda, 
     beta, product, lda);
+}
   task_debug("GEMM  L(%d,%d) += L(%d,%d)*L(%d,%d)\n", 
     m, n, m, k, k, n);
 }
@@ -179,15 +194,6 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   mkl_set_dynamic(0);
 #endif
 
-  RegisterTask(potrf, void, int, int,
-    int, double*);
-  RegisterTask(trsm,  void, int, int, int,
-    int, double*, double*);
-  RegisterTask(syrk,  void, int, int, int,
-    int, double*, double*);
-  RegisterTask(gemm,  void, int, int, int, int,
-    int, bool, bool, double, double, double*, double*, double*);
-
   if(argc != 3){
     std::cerr << "Usage: " << argv[0] << " <nblocks> <blocksize>" << std::endl;
     return -1;
@@ -201,78 +207,63 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   Matrix A(nBlocks, blockSize);
   Matrix L(nBlocks, blockSize);
 
-  int ncopies = 1;
-
-  for (int c=0; c < ncopies; ++c, sch->nextIter()){
-#ifdef _OPENMP
-    omp_set_num_threads(20);
-#endif
-    std::cout << "Filling" << std::endl;
-    L.symmetricFill();
-    A.randomFill();
-    std::cout << "Blas" << std::endl;
-    // tmp = A' x L
-    double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
-    cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, nrows, nrows, nrows,
-                1.0, A.storageAddr(), nrows, L.storageAddr(), nrows, 0.0,
-                tmp, nrows);
-    // L = tmp x A
-    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, nrows, nrows, nrows,
-                1.0, tmp, nrows, A.storageAddr(), nrows, 0.0,
-                L.storageAddr(), nrows);
-    free(tmp);
-    // A = copy(L)
-    cblas_dcopy(nrows * nrows, L.storageAddr(), 1, A.storageAddr(), 1);
-    std::cout << "Blas done" << std::endl;
-  }
+  std::cout << "Filling" << std::endl;
+  L.symmetricFill();
+  A.randomFill();
+  std::cout << "Blas" << std::endl;
+  // tmp = A' x L
+  double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
+  cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, nrows, nrows, nrows,
+              1.0, A.storageAddr(), nrows, L.storageAddr(), nrows, 0.0,
+              tmp, nrows);
+  // L = tmp x A
+  cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, nrows, nrows, nrows,
+              1.0, tmp, nrows, A.storageAddr(), nrows, 0.0,
+              L.storageAddr(), nrows);
+  // A = copy(L)
+  cblas_dcopy(nrows * nrows, L.storageAddr(), 1, A.storageAddr(), 1);
+  std::cout << "Blas done" << std::endl;
   // return 0;
 
 #pragma offload_transfer target(mic:0) \
   in(L.storage_ : length(nrows * nrows) align(64) free_if(0) alloc_if(1))
 
-  for (int iter=0; iter < ncopies; ++iter, sch->nextIter()){
-    Task* root = 0;
-    root = initDag(L);
-    std::cout << "Running Cholesky\n";
+  Task* root = 0;
+  root = initDag(L);
+  std::cout << "Running Cholesky\n";
 
-    sch->run(root);
-    int nfailures = 0;
-    std::cout << "Performing validation" << std::endl;
-    /*
-#ifdef _OPENMP
-    omp_set_num_threads(20);
-#endif
-    for (int i=0; i < nrows; ++i){
-      for (int j=i+1; j < nrows; ++j){
-        int toIdx = j*nrows + i;
-        L.storageAddr()[toIdx] = 0.0;
-      }
-    }
-    std::cout << "blas" << std::endl;
-    double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
-    cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, nrows, nrows,
-                1.0, L.storageAddr(), nrows, 0.0, tmp, nrows);
-    std::cout << "test" << std::endl;
-#pragma omp parallel for
-    for(int i = 0; i < nrows; i++){
-      for(int j = 0; j < i+1; j++){
-        double tol = 1e-4;
-        auto gold_val = A.storageAddr()[j*nrows + i];
-        auto test_val = tmp[j*nrows + i];
-        if(fabs(gold_val - test_val) > tol){
-          nfailures++;
-        }
-      }
-    }
-    free(tmp);
-    if (nfailures){
-      printf("Cholesky failed with %d wrong elements on iteration %d\n",
-        nfailures, iter);
-    } else {
-      printf("Cholesky passed validation test on iteration %d\n", iter);
+  sch->run(root);
+  int nfailures = 0;
+  std::cout << "Performing validation" << std::endl;
+#pragma offload_transfer target(mic:0) \
+  out(L.storage_ : length(nrows * nrows) free_if(1))
+
+  for (int i=0; i < nrows; ++i){
+    for (int j=i+1; j < nrows; ++j){
+      int toIdx = j*nrows + i;
+      L.storageAddr()[toIdx] = 0.0;
     }
   }
-  */
+  std::cout << "blas" << std::endl;
+  cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, nrows, nrows,
+              1.0, L.storageAddr(), nrows, 0.0, tmp, nrows);
+  std::cout << "test" << std::endl;
+  for(int i = 0; i < nrows; i++){
+    for(int j = 0; j < i+1; j++){
+      double tol = 1e-4;
+      auto gold_val = A.storageAddr()[j*nrows + i];
+      auto test_val = tmp[j*nrows + i];
+      if(fabs(gold_val - test_val) > tol){
+        nfailures++;
+      }
+    }
+  }
+  free(tmp);
+  if (nfailures){
+    printf("Cholesky failed with %d wrong elements\n",
+      nfailures);
+  } else {
+    printf("Cholesky passed validation test\n");
   }
 
   fflush(stdout);

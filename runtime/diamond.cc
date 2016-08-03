@@ -8,7 +8,13 @@
 
 void test(int a, int b, int c)
 {
+#pragma offload target(mic:0) \
+  in(a) \
+  in(b) \
+  in(c)
+{
   printf("a=%d, b=%d, c=%d\n", a, b, c);
+}
 }
 
 enum function_id {

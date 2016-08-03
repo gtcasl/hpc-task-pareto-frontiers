@@ -6,10 +6,16 @@ enum fxn_id {
 
 void my_ddot(int n, double* a, double* b, double* c)
 {
+#pragma offload target(mic:0) \
+  in(a:length(n)) \
+  in(b:length(n)) \
+  in(c:length(n))
+{
   printf("Running ddot %p = %p * %p\n", c, a, b);
   for (int i=0; i < n; ++i){
     c[i] = a[i]*b[i];
   }
+}
 }
 
 Task* initDag(int nelems, double* a, double* b, double* c, double* d)

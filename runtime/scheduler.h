@@ -4,8 +4,9 @@
 #include <vector>
 #include <task.h>
 #include <unordered_set>
-#include <miclib.h>
 #include <signal.h>
+
+struct mic_device;
 
 double getTime();
 
@@ -39,33 +40,13 @@ class Scheduler
 
   int claimCpu();
 
-  virtual ~Scheduler(){
-    global = 0;
-    mic_close_device(mic_device_);
-  }
+  virtual ~Scheduler();
 
   uint32_t readMICPoweruW() const;
   static void overflow(int signum, siginfo_t*, void*);
 
  protected:
-  Scheduler() :
-    cumulative_power_(0),
-    num_power_samples_(0),
-    max_power_(0),
-    power_limit_(1000.0),
-    available_power_(power_limit_)
-  {
-    if (global){
-      fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
-      abort();
-    }
-    global = this;
-    // initialize power measurement
-    if(mic_open_device(&mic_device_, 0) != E_MIC_SUCCESS){
-      std::cerr << "Error: Unable to open MIC" << std::endl;
-      abort();
-    }
-  }
+  Scheduler();
  private:
   virtual void runMaster(Task* root) = 0;
 
@@ -73,7 +54,7 @@ class Scheduler
 
   CPUList available_cores_;
 
-  struct mic_device* mic_device_;
+  mic_device* mic_device_;
 
  protected:
   long long cumulative_power_;
