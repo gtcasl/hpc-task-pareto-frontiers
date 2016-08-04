@@ -215,6 +215,8 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, nrows, nrows, nrows,
               1.0, tmp, nrows, A.storage_, nrows, 0.0,
               L.storage_, nrows);
+  mkl_free(tmp);
+
   // A = copy(L)
   cblas_dcopy(nrows * nrows, L.storage_, 1, A.storage_, 1);
 }
@@ -226,6 +228,8 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   std::cout << "Running Cholesky\n";
 
   sch->run(root);
+  std::cout << "Cholesky completed\n";
+#if CHOLESKY_DEBUG
   int nfailures = 0;
   std::cout << "Performing validation" << std::endl;
 #pragma offload_transfer target(mic:0) \
@@ -259,8 +263,7 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   } else {
     printf("Cholesky passed validation test\n");
   }
-
-  fflush(stdout);
+#endif
 
   return 0;
 }
