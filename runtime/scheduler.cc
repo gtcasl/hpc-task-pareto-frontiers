@@ -42,7 +42,8 @@ Scheduler::Scheduler() :
   num_power_samples_(0),
   max_power_(0),
   power_limit_(1000.0),
-  available_power_(power_limit_)
+  available_power_(power_limit_),
+  do_profiling_(false)
 {
   if (global){
     fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
@@ -193,12 +194,34 @@ void* run_task(void* params){
 void
 SequentialScheduler::runMaster(Task* root)
 {
+  int iter_num_threads = numAvailableCores();
   Logger logger{"scheduler.log"};
   logger.log("message", "cataloging configuration",
              "max_threads", numAvailableCores());
 
   double start_time = getTime();
   std::list<Task*> pendingTasks;
+
+  // initialize power measurement on this rank
+
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    logger.log("error", "Unable to set up signal handler");
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  if(setitimer(ITIMER_REAL, &work_time, NULL) == -1){
+    std::cout << "Unable to set timer" << std::endl;
+  }
+
+  cumulative_power_ = 0;
+  num_power_samples_ = 0;
 
   pendingTasks.push_back(root);
   while(!pendingTasks.empty()){
@@ -221,8 +244,15 @@ SequentialScheduler::runMaster(Task* root)
       task->addCpu(i);
     }
     logger.log("start_task", "",
-               "name", Names[task->typeID()]);
+               "name", Names[task->typeID()],
+               "nthreads", iter_num_threads);
+    max_power_ = 0;
+    cumulative_power_ = 0;
+    num_power_samples_ = 0;
     pthread_t thread;
+    if(do_profiling_ && task->canProfile()){
+      task->enableProfiling();
+    }
     pthread_create(&thread, NULL, run_task, (void*)task);
     void* retval_v;
     pthread_join(thread, &retval_v);
@@ -230,16 +260,28 @@ SequentialScheduler::runMaster(Task* root)
     // read back the elapsed time from the runner and log to file
     double elapsed_seconds = retval->elapsed_seconds;
     int nthreads = retval->nthreads;
+    double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
     logger.log("end_task", "",
                "name", Names[task->typeID()],
                "elapsed_seconds", elapsed_seconds,
                "nthreads", nthreads,
+               "avg_power_W", avg_power_W,
+               "max_power_W", max_power_ / 1000000.0,
                "released_listeners", task->getNumListeners());
     task->clearListeners(pendingTasks);
     delete retval;
   }
 
   double end_time = getTime();
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
   logger.log("time_s", end_time - start_time);
   logger.log("message", "ALL DONE");
 }
@@ -638,5 +680,12 @@ AdvancedScheduler::runMaster(Task* root)
   logger.log("max_power_W", max_power_ / 1000000.0);
   logger.log("time_s", end_time - start_time);
   logger.log("message", "ALL DONE");
+}
+
+void 
+ProfilingScheduler::runMaster(Task* root)
+{
+  do_profiling_ = true;
+  SequentialScheduler::runMaster(root);
 }
 

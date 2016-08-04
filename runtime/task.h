@@ -33,8 +33,11 @@ struct cpu_set_t {};
 // the energy scaling work.
 #define IDLE_POWER 106.9
 
+#define new_mutating_task(taskName, ...) \
+  make_task(taskName, #taskName, taskName##_id, std::make_tuple(__VA_ARGS__), true)
+
 #define new_task(taskName, ...) \
-  make_task(taskName, #taskName, taskName##_id, std::make_tuple(__VA_ARGS__))
+  make_task(taskName, #taskName, taskName##_id, std::make_tuple(__VA_ARGS__), false)
 
 
 #ifdef DEP_DEBUG
@@ -42,11 +45,6 @@ struct cpu_set_t {};
 #else
 #define dep_debug(...) 
 #endif
-
-namespace impl{
-extern bool done;
-void wakeup(int signum, siginfo_t*, void*);
-}
 
 class Task {
  public:
@@ -124,32 +122,14 @@ class Task {
     do_run();
   }
 
-  void runProfiling()
-  {
-    impl::done = false;
-    struct sigaction sa;
-    sa.sa_sigaction = impl::wakeup;
-    sa.sa_flags = SA_SIGINFO;
-    if(sigaction(SIGALRM, &sa, nullptr) != 0){
-      std::cerr << "Error: unable to set up signal handler" << std::endl;
-      abort();
-    }
-    struct itimerval work_time;
-    work_time.it_value.tv_sec = 0;
-    work_time.it_value.tv_usec = 500000; // sleep for 500 ms
-    work_time.it_interval.tv_sec = 0;
-    work_time.it_interval.tv_usec = 0;
-    setitimer(ITIMER_REAL, &work_time, NULL);
+  void runProfiling();
 
-    setup();
-    while(!impl::done){
-      do_run();
-    }
-    impl::done = false;
+  bool canProfile() const {
+    return !isMutating;
   }
 
  protected:
-  Task(int typeID);
+  Task(int typeID, bool isMut);
 
  private:
   int cpu_state_;
@@ -167,6 +147,7 @@ class Task {
    */
   std::set<Task*> listeners_;
   bool doProfiling;
+  bool isMutating;
 };
 
 extern std::map<int, const char*> Names;
@@ -195,8 +176,8 @@ class Task_tmpl : public Task
 {
   typedef std::tuple<Args...> Tuple;
  public:
-  Task_tmpl(Fxn f, const Tuple& params, int typeID) :
-    Task(typeID),
+  Task_tmpl(Fxn f, const Tuple& params, int typeID, bool isMut) :
+    Task(typeID, isMut),
     params_(params), func_(f)
   {}
 
@@ -217,7 +198,7 @@ class Task_tmpl : public Task
 
 template <typename Fxn, typename... Args>
 Task*
-make_task(Fxn f, const char* name, int id, const std::tuple<Args...>& t){
+make_task(Fxn f, const char* name, int id, const std::tuple<Args...>& t, bool isMut){
   if(Names.find(id) == std::end(Names)){
     // insert all the stuff into the static maps
     Names[id] = name;
@@ -250,7 +231,7 @@ make_task(Fxn f, const char* name, int id, const std::tuple<Args...>& t){
     MinTimes[id] = *min;
     MinThreads[id] = std::distance(std::begin(times), min);
   }
-  return new impl::Task_tmpl<Fxn,Args...>(f,t,id);
+  return new impl::Task_tmpl<Fxn,Args...>(f,t,id,isMut);
 }
 
 #endif

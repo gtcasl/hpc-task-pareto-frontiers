@@ -7,6 +7,8 @@
 #include <limits>
 #include <mkl.h>
 #include <offload.h>
+#include <sys/timerfd.h>
+#include <unistd.h>
 
 std::map<int,const char*> Names;
 std::map<int,std::vector<double> > Times;
@@ -26,11 +28,12 @@ int get_next_least_powerful_num_threads(int id,
   return 0;
 }
 
-Task::Task(int typeID) :  
+Task::Task(int typeID, bool isMut) :  
   cpu_state_(0),
   nthread_(0),
   typeID_(typeID),
-  doProfiling(false)
+  doProfiling(false),
+  isMutating(isMut)
 {
   CPU_ZERO(&cpumask_);
   CPU_ZERO(&full_mask_);
@@ -96,11 +99,27 @@ double Task::estimateTime() const
   return my_time + children_time;
 }
 
-bool impl::done;
-
-void impl::wakeup(int signum, siginfo_t*, void*){
-  if(signum == SIGALRM){
-    done = true;
+void Task::runProfiling()
+{
+  setup();
+  
+  auto fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
+  if(fd == -1){
+    std::cerr << "Error: Unable to create timerfd" << std::endl;
   }
+  itimerspec it;
+  it.it_value.tv_sec = 0;
+  it.it_value.tv_nsec = 500000000; // sleep for 500 ms
+  it.it_interval.tv_sec = 0;
+  it.it_interval.tv_nsec = 0;
+  if(timerfd_settime(fd, 0, &it, NULL) == -1){
+    std::cerr << "Error: Unable to set timerfd" << std::endl;
+  }
+
+  uint64_t buf;
+  while(read(fd, &buf, sizeof(buf)) != sizeof(buf)){
+    do_run();
+  }
+  close(fd);
 }
 

@@ -47,8 +47,8 @@ class Scheduler
 
  protected:
   Scheduler();
- private:
   virtual void runMaster(Task* root) = 0;
+ private:
 
   static Scheduler* global;
 
@@ -62,22 +62,32 @@ class Scheduler
   uint32_t max_power_;
   double power_limit_; // I think the default of 350 is way above the TDP
   double available_power_; // amount of power that can be used at the moment
+  bool do_profiling_;
 
 };
 
 class SequentialScheduler : public Scheduler
 {
-  void runMaster(Task* root);
+  protected:
+    void runMaster(Task* root);
 };
 
 class BaselineScheduler : public Scheduler
 {
-  void runMaster(Task* root);
+  protected:
+    void runMaster(Task* root);
 };
 
 class AdvancedScheduler : public Scheduler
 {
-  void runMaster(Task* root);
+  protected:
+    void runMaster(Task* root);
+};
+
+class ProfilingScheduler : public SequentialScheduler
+{
+  protected:
+    void runMaster(Task* root);
 };
 
 #endif
