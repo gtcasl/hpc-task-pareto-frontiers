@@ -265,6 +265,7 @@ SequentialScheduler::runMaster(Task* root)
                "name", Names[task->typeID()],
                "elapsed_seconds", elapsed_seconds,
                "nthreads", nthreads,
+               "end_time", getTime(),
                "avg_power_W", avg_power_W,
                "max_power_W", max_power_ / 1000000.0,
                "released_listeners", task->getNumListeners());
@@ -287,7 +288,7 @@ SequentialScheduler::runMaster(Task* root)
 }
   
 void
-BaselineScheduler::runMaster(Task* root)
+SimpleScheduler::runMaster(Task* root)
 {
   Logger logger{"scheduler.log"};
   logger.log("message", "cataloging configuration",
@@ -334,6 +335,7 @@ BaselineScheduler::runMaster(Task* root)
                    "name", Names[task->typeID()],
                    "elapsed_seconds", elapsed_seconds,
                    "nthreads", nthreads,
+                   "end_time", getTime(),
                    "released_listeners", task->getNumListeners());
         task->clearListeners(pendingTasks);
         for(const auto& cpu : taskCpuAssignments[task]){
@@ -455,6 +457,7 @@ AdvancedScheduler::runMaster(Task* root)
                    "name", Names[task->typeID()],
                    "elapsed_seconds", elapsed_seconds,
                    "nthreads", nthreads,
+                   "end_time", getTime(),
                    "released_listeners", task->getNumListeners());
         task->clearListeners(pendingTasks);
         for(const auto& cpu : taskCpuAssignments[task]){
@@ -687,5 +690,14 @@ ProfilingScheduler::runMaster(Task* root)
 {
   do_profiling_ = true;
   SequentialScheduler::runMaster(root);
+}
+
+void
+BaselineScheduler::runMaster(Task* root)
+{
+  for(auto& x : Powers){
+    x.second = std::vector<double>(NUM_THREADS + 1, 0.0);
+  }
+  AdvancedScheduler::runMaster(root);
 }
 

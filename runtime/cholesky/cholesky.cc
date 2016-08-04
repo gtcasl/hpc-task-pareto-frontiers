@@ -202,22 +202,24 @@ int cholesky(Scheduler* sch, int argc, char** argv)
   L.symmetricFill();
   A.randomFill();
   std::cout << "Blas" << std::endl;
+#pragma offload target(mic:0) \
+  in(L.storage_ : length(nrows * nrows) align(64) free_if(0) alloc_if(1)) \
+  inout(A.storage_ : length(nrows * nrows) align(64) free_if(0) alloc_if(1))
+{
   // tmp = A' x L
-  double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
+  double* tmp = (double*) mkl_malloc(nrows * nrows * sizeof(double), 64);
   cblas_dgemm(CblasColMajor, CblasTrans, CblasNoTrans, nrows, nrows, nrows,
-              1.0, A.storageAddr(), nrows, L.storageAddr(), nrows, 0.0,
+              1.0, A.storage_, nrows, L.storage_, nrows, 0.0,
               tmp, nrows);
   // L = tmp x A
   cblas_dgemm(CblasColMajor, CblasNoTrans, CblasNoTrans, nrows, nrows, nrows,
-              1.0, tmp, nrows, A.storageAddr(), nrows, 0.0,
-              L.storageAddr(), nrows);
+              1.0, tmp, nrows, A.storage_, nrows, 0.0,
+              L.storage_, nrows);
   // A = copy(L)
-  cblas_dcopy(nrows * nrows, L.storageAddr(), 1, A.storageAddr(), 1);
+  cblas_dcopy(nrows * nrows, L.storage_, 1, A.storage_, 1);
+}
   std::cout << "Blas done" << std::endl;
   // return 0;
-
-#pragma offload_transfer target(mic:0) \
-  in(L.storage_ : length(nrows * nrows) align(64) free_if(0) alloc_if(1))
 
   Task* root = 0;
   root = initDag(L);
@@ -236,6 +238,7 @@ int cholesky(Scheduler* sch, int argc, char** argv)
     }
   }
   std::cout << "blas" << std::endl;
+  double* tmp = (double*) malloc(nrows * nrows * sizeof(double));
   cblas_dsyrk(CblasColMajor, CblasLower, CblasNoTrans, nrows, nrows,
               1.0, L.storageAddr(), nrows, 0.0, tmp, nrows);
   std::cout << "test" << std::endl;

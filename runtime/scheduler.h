@@ -72,7 +72,7 @@ class SequentialScheduler : public Scheduler
     void runMaster(Task* root);
 };
 
-class BaselineScheduler : public Scheduler
+class SimpleScheduler : public Scheduler
 {
   protected:
     void runMaster(Task* root);
@@ -85,6 +85,12 @@ class AdvancedScheduler : public Scheduler
 };
 
 class ProfilingScheduler : public SequentialScheduler
+{
+  protected:
+    void runMaster(Task* root);
+};
+
+class BaselineScheduler : public AdvancedScheduler
 {
   protected:
     void runMaster(Task* root);
