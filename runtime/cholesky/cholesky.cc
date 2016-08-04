@@ -14,12 +14,10 @@ void
 trsm(int k, int m, int size, int lda, double* A, double* B)
 {
   task_debug("TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
-  int nthreads;
 #pragma offload target(mic:0) \
   in(A:length(0) alloc_if(0) free_if(0)) \
   in(B:length(0) alloc_if(0) free_if(0))
 {
-  nthreads = mkl_get_max_threads();
   // A = Akk
   // B = Amk
   //solve AX = B
@@ -34,7 +32,6 @@ trsm(int k, int m, int size, int lda, double* A, double* B)
     A, lda,
     B, lda);
 }
-  std::cout << "trsm threads: " << nthreads << std::endl;
   task_debug("TRSM  A(%d,%d)  = L(%d,%d)*L(%d,%d)\n", m, k, m, k, k, k);
 }
 
@@ -188,9 +185,6 @@ initDag(Matrix& A)
 
 int cholesky(Scheduler* sch, int argc, char** argv)
 {
-  // disable dynamic thread adjustment in MKL
-  mkl_set_dynamic(0);
-
   if(argc != 3){
     std::cerr << "Usage: " << argv[0] << " <nblocks> <blocksize>" << std::endl;
     return -1;

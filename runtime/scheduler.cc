@@ -70,6 +70,7 @@ Scheduler::init(int argc, char** argv)
     available_power_ = power_limit_;
   }
   available_cores_ = CPUList(num_threads);
+  putenv("MKL_DYNAMIC=FALSE");
 }
 
 void
@@ -254,7 +255,7 @@ BaselineScheduler::runMaster(Task* root)
   std::list<Task*> pendingTasks;
   std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
 
-  int availableWorkers = 2;
+  int availableWorkers = 3;
 
   // initialize power measurement on this rank
   struct sigaction sa;
