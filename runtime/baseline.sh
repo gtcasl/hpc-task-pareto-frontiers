@@ -1,6 +1,6 @@
 #!/bin/bash
 
-export NUMTHREADS=112
+#export NUMTHREADS=112
 #export POWERLIMIT=110
 
 # Warmup
@@ -10,10 +10,10 @@ export NUMTHREADS=112
 #    ./cholesky.sh
 #done
 
-for x in 40 50 60 1000
+for x in `seq 15 5 30`
 do
     #POWERLIMIT=$x ./cg.sh
     #mv scheduler.cg.log cg.$x.log
-    POWERLIMIT=$x ./cholesky.sh
-    mv scheduler.cholesky.log cholesky.$x.log
+    NUMTHREADS=$x ./run -s baseline cholesky 6 1400
+    mv scheduler.log cholesky.$x.baseline.log
 done

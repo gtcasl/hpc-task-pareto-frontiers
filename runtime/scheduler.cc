@@ -268,6 +268,7 @@ SequentialScheduler::runMaster(Task* root)
                "end_time", getTime(),
                "avg_power_W", avg_power_W,
                "max_power_W", max_power_ / 1000000.0,
+               "avg_time_s", elapsed_seconds / task->getIters(),
                "released_listeners", task->getNumListeners());
     task->clearListeners(pendingTasks);
     delete retval;
@@ -616,6 +617,14 @@ AdvancedScheduler::runMaster(Task* root)
           task_thread_assignments[losing_task] = new_threads;
           sum_p += delta_p;
         }
+        // TODO check to see if we make any progress
+        if(std::all_of(begin(task_thread_assignments),
+                       end(task_thread_assignments),
+                       [](const std::pair<Task*,int>& a){ return a.second == 0; })
+           && runningTasks.empty()){
+          logger.log("message", "Unable to launch a task! Must abort");
+          exit(-1);
+        }
       } else {
         logger.log("message", "Enough power to go around");
       }
@@ -666,7 +675,7 @@ AdvancedScheduler::runMaster(Task* root)
         runningTasks.push_back(thread);
       }
     }
-  } while (!runningTasks.empty());
+  } while (!runningTasks.empty() || !pendingTasks.empty());
 
   double end_time = getTime();
   double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;

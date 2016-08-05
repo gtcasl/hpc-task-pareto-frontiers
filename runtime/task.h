@@ -128,8 +128,13 @@ class Task {
     return !isMutating;
   }
 
+  int getIters() const {
+    return numIters;
+  }
+
  protected:
   Task(int typeID, bool isMut);
+  int numIters;
 
  private:
   int cpu_state_;
@@ -182,6 +187,7 @@ class Task_tmpl : public Task
   {}
 
   void do_run() {
+    numIters++;
     callFunc(typename gens<sizeof...(Args)>::type());
   }
 

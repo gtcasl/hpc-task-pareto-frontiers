@@ -29,6 +29,7 @@ int get_next_least_powerful_num_threads(int id,
 }
 
 Task::Task(int typeID, bool isMut) :  
+  numIters(0),
   cpu_state_(0),
   nthread_(0),
   typeID_(typeID),
