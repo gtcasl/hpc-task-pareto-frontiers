@@ -484,9 +484,12 @@ AdvancedScheduler::runMaster(Task* root)
       }
       if(sum_s > numAvailableCores()){
         logger.log("message", "Scaling desired threads to those available");
+        int new_sum_s = 0;
         for(auto& s : task_thread_assignments){
           s.second = std::floor((double)numAvailableCores() / sum_s * s.second);
+          new_sum_s += s.second;
         }
+        sum_s = new_sum_s;
       }else{
         logger.log("message", "Enough threads to go around");
       }
@@ -599,9 +602,15 @@ AdvancedScheduler::runMaster(Task* root)
             }
           }
           assert(losing_task != nullptr && "Error: Unable to find a losing task");
-          assert((new_threads == 0 ||
-                 new_threads < task_thread_assignments[losing_task]) &&
-                 "Error: by lowering the power we're increasing the number of threads. Uh oh.");
+          if(new_threads > task_thread_assignments[losing_task]){
+            logger.log("message", "Lowering the power but increasing the number of threads",
+                       "old_threads", task_thread_assignments[losing_task],
+                       "new_threads", new_threads);
+            if(sum_s + new_threads - task_thread_assignments[losing_task] > numAvailableCores()){
+              assert(false && "Error: going over the number of available cores");
+              //logger.log("message", "Warning: going over the number of available cores");
+            }
+          }
 
           if(!found_losing_task){
             logger.log("message", "Unable to find a task that can lower power any more");
@@ -704,6 +713,9 @@ ProfilingScheduler::runMaster(Task* root)
 void
 BaselineScheduler::runMaster(Task* root)
 {
+  // The only difference between the baseline and the advanced scheduler is
+  // that the advanced scheduler changes its heuristic if there's non-zero power
+  // consumed by the tasks.
   for(auto& x : Powers){
     x.second = std::vector<double>(NUM_THREADS + 1, 0.0);
   }

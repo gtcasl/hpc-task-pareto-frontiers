@@ -15,17 +15,15 @@ std::map<int,std::vector<double> > Times;
 std::map<int,double> MinTimes;
 std::map<int,int> MinThreads;
 std::map<int,std::vector<double> > Powers;
+std::map<int,std::vector<std::pair<int,double>> > SortedPowers;
 
 int get_next_least_powerful_num_threads(int id,
                                         int cur_num_threads) {
-  double cur_power = Powers[id][cur_num_threads];
-  int new_num_threads = cur_num_threads;
-  for(; new_num_threads > 0; --new_num_threads){
-    if(Powers[id][new_num_threads] < cur_power){
-      return new_num_threads;
-    }
-  }
-  return 0;
+  auto current = std::make_pair(cur_num_threads, Powers[id][cur_num_threads]);
+  auto idx = std::find(begin(SortedPowers[id]), end(SortedPowers[id]), current);
+  assert(idx != end(SortedPowers[id]) && "Error: trying to find configuration that doesn't exist");
+  assert(idx != begin(SortedPowers[id]) && "Error: some power is less than zero");
+  return (idx - 1)->first;
 }
 
 Task::Task(int typeID, bool isMut) :  

@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <sys/time.h>
 #include <signal.h>
+#include <cassert>
 
 #ifdef no_affinity
 struct cpu_set_t {};
@@ -160,6 +161,7 @@ extern std::map<int, std::vector<double> > Times;
 extern std::map<int, double> MinTimes;
 extern std::map<int, int> MinThreads;
 extern std::map<int, std::vector<double> > Powers;
+extern std::map<int, std::vector<std::pair<int,double>>> SortedPowers;
 
 int get_next_least_powerful_num_threads(int id, int cur_num_threads);
 
@@ -208,31 +210,41 @@ make_task(Fxn f, const char* name, int id, const std::tuple<Args...>& t, bool is
   if(Names.find(id) == std::end(Names)){
     // insert all the stuff into the static maps
     Names[id] = name;
-    std::vector<double> times(NUM_THREADS + 1, 0.0);
-    times[0] = std::numeric_limits<double>::infinity();
-    std::vector<double> powers(NUM_THREADS + 1, 0.0);
+    std::vector<double> times(NUM_THREADS + 1, std::numeric_limits<double>::infinity());
+    std::vector<double> powers(NUM_THREADS + 1, std::numeric_limits<double>::infinity());
+    powers[0] = 0.0; // default case is infinite power, but no threads means no power
     std::string sname = name;
     sname += ".csv";
     std::ifstream ifs{sname};
     if(ifs.good()){
       std::string line;
       std::getline(ifs, line); // kill header
-      for(int i = 1; i < NUM_THREADS + 1; ++i){
-        std::getline(ifs, line); 
+      while(std::getline(ifs, line)){
         std::stringstream stst{line};
         std::string elem;
         std::getline(stst, elem, ','); // nthreads
+        int nthreads = std::stoi(elem);
+        assert(nthreads < NUM_THREADS && "Error: profile uses more than the available number of threads");
         std::getline(stst, elem, ','); // energy
         std::getline(stst, elem, ','); // time
-        times[i] = std::stod(elem);
+        times[nthreads] = std::stod(elem);
         std::getline(stst, elem, ','); // power
         // subtract out the baseline for keeping the system running
-        powers[i] = std::stod(elem) - IDLE_POWER;
+        powers[nthreads] = std::stod(elem) - IDLE_POWER;
+        assert(powers[nthreads] >= 0.0 && "Error: power is lower than the idle power");
         std::getline(stst, elem, ','); // speedup
       }
     }
     Times[id] = times;
     Powers[id] = powers;
+    for(int i = 0; i < Powers[id].size(); i++){
+      SortedPowers[id].emplace_back(i, Powers[id][i]);
+    }
+    std::sort(begin(SortedPowers[id]), end(SortedPowers[id]),
+              [](const std::pair<int,double>& a,
+                 const std::pair<int,double>& b){
+                return a.second < b.second;
+              });
     auto min = std::min_element(std::begin(times), std::end(times));
     MinTimes[id] = *min;
     MinThreads[id] = std::distance(std::begin(times), min);
