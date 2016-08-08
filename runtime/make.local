@@ -1,0 +1,71 @@
+TARGET := run
+SRC := $(shell ls *.cc) \
+  $(shell ls cg/*.cc) \
+  cholesky/cholesky.cc \
+  lu/lu.cc
+HEADERS := $(shell ls *.h)
+
+#target := gcc
+target := darwin
+#target := mic
+#target := intel
+
+MPI := $(HOME)/Programs/install/mpich/gcc48/bin
+
+#CXX :=    $(MPI)/mpicxx
+#CC :=     $(MPI)/mpicc
+CXX := mpicxx
+CC := mpicc
+CXXFLAGS := -fPIC -O0 -g -w -std=c++11
+CPPFLAGS := -I. -DCHOLESKY_DEBUG
+LIBDIR :=   
+PREFIX :=   
+LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
+
+ifeq ($(target),gcc)
+CXXFLAGS := $(CXXFLAGS) -fopenmp
+endif
+
+ifeq ($(target),darwin)
+LDFLAGS := $(LDFLAGS) -lcblas -lblas -llapack
+CPPFLAGS := $(CPPFLAGS) -Dno_affinity -Dno_timespec -Dno_mkl -Dno_miclib -Dbasic_scheduler \
+ -I/System/Library/Frameworks/Accelerate.framework/Versions/Current/Frameworks/vecLib.framework/Versions/Current/Headers
+endif
+
+ifeq ($(target),intel)
+CXX := $(CXX) -cxx=icpc
+CC := $(CC) -cc=icc
+CXXFLAGS := $(CXXFLAGS) -openmp -mkl
+LDFLAGS := $(LDFLAGS) -lmkl_rt
+endif
+
+ifeq ($(target),mic)
+CXXFLAGS := $(CXXFLAGS) -mmic -openmp
+CXX := $(CXX) -cxx=icpc
+CC := $(CC) -cc=icc
+LDFLAGS := $(LDFLAGS) -L$(MKLROOT)/lib/mic -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core
+endif
+
+OBJ := $(SRC:.cc=.o) 
+OBJ := $(OBJ:.cpp=.o)
+OBJ := $(OBJ:.c=.o)
+
+.PHONY: clean install 
+
+all: $(TARGET)
+
+$(TARGET): $(OBJ) 
+	$(CXX) -o $@ $+ $(CXXFLAGS) $(LDFLAGS) $(LIBS) 
+
+%.o: %.cc  $(HEADERS)
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
+
+%.o: %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
+
+clean: 
+	rm -f $(TARGET) $(OBJ) 
+
+install: $(TARGET)
+	cp $< $(PREFIX)/bin
+

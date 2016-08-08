@@ -19,14 +19,13 @@
 #include <time.h>
 #include <miclib.h>
 #include <vector>
+#include <cstdlib>
 
 
 #define __GNU_SOURCE
 #include <sched.h>
 
-using namespace std;
-
-#define error(...) fprintf(stderr, __VA_ARGS__)
+#define error(...) fprintf(stderr, __VA_ARGS__); perror(NULL); abort()
 
 #define DEFAULT_NUM_THREADS 228
 

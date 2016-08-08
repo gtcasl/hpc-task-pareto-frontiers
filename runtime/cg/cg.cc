@@ -37,6 +37,7 @@ enum fxn_id {
   myddot_id,
   start_id,
   mydaxpy_id,
+  dxapy_id,
   spmv_id,
   copy_id,
   subtract_id,
@@ -126,6 +127,24 @@ void mydaxpy(int n, double a, DoubleArray x, DoubleArray y)
   debug(start mydaxpy);
   cblas_daxpy(n, a, x, 1, y, 1);
   debug(end mydaxpy);
+}
+
+/**
+ * @brief dxapy Computes Y = X + A*Y
+ * @param n
+ * @param a
+ * @param x
+ * @param y
+ */
+void dxapy(int n, double a, DoubleArray x, DoubleArray y)
+{
+  debug(start dxapy);
+  //double scale = (1+a);
+  //scale vector Y by (1+a) - then add in 1.0 times x
+  //cblas_dscal(n, a, y, 1);
+  //cblas_daxpy(n, 1.0, x, 1, y, 1);
+  cblas_daxpby(n, 1.0, x, 1, a, y, 1);
+  debug(end dxapy);
 }
 
 void copy(int n, DoubleArray dst, DoubleArray src)
@@ -234,7 +253,7 @@ initDag(config cfg,
     setEqual->dependsOn(sumRsq);
 
     for (int i=0; i < cfg.nchunks; ++i){
-      Task* compP  = new_task(mydaxpy, cfg.nrows_per_chunk, *beta, pChunks[i], rChunks[i]);
+      Task* compP  = new_task(dxapy, cfg.nrows_per_chunk, *beta, rChunks[i], pChunks[i]);
       compP->dependsOn(compBeta);
       lastWavefront[i] = compP;
     }
@@ -258,6 +277,7 @@ int cg(Scheduler* sch, int argc, char** argv)
   RegisterTask(spmv, void, int, DoubleArray, DoubleArray, DoubleArray, IntArray, IntArray);
   RegisterTask(myddot, void, int, DoubleArray, DoubleArray, DoublePtr);
   RegisterTask(mydaxpy, void, int, double, DoubleArray, DoubleArray);
+  RegisterTask(dxapy, void, int, double, DoubleArray, DoubleArray);
   RegisterTask(comp_alpha, void, double, double, DoublePtr);
   RegisterTask(comp_beta, void, double, double, DoublePtr);
   RegisterTask(assign, void, DoublePtr, DoublePtr);

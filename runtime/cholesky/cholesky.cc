@@ -1,4 +1,8 @@
+#ifdef no_mkl
+#include <fake_mkl.h>
+#else
 #include <mkl.h>
+#endif
 #include <test.h>
 
 #include "cholesky.h"
