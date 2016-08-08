@@ -1,5 +1,6 @@
 #include <mkl.h>
 #include <test.h>
+#include <matrix.h>
 
 #include "cholesky.h"
 

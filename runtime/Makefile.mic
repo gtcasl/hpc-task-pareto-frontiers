@@ -1,7 +1,7 @@
 TARGET := run
 #SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc cholesky/choleskyprofile.cc
-SRC := $(shell ls *.cc) cholesky/cholesky.cc cholesky/choleskyprofile.cc
-HEADERS := $(shell ls *.h) cholesky/cholesky.h
+SRC := $(shell ls *.cc) cholesky/cholesky.cc cholesky/choleskyprofile.cc lu/lu.cc lu/luprofile.cc
+HEADERS := $(shell ls *.h) cholesky/cholesky.h lu/lu.h
 
 CXX :=    icpc
 CXXFLAGS := -fPIC -O2 -g -mkl -w3 -diag-disable remark -Wunused-variable

@@ -4,6 +4,7 @@
 #include <mkl.h>
 #endif
 #include <test.h>
+#include <matrix.h>
 
 #include "cholesky.h"
 
