@@ -20,6 +20,7 @@
 #include <sys/time.h>
 #include <signal.h>
 #include <cassert>
+#include <tuple>
 
 #ifdef no_affinity
 struct cpu_set_t {};
@@ -158,10 +159,8 @@ class Task {
 
 extern std::map<int, const char*> Names;
 extern std::map<int, std::vector<double> > Times;
-extern std::map<int, double> MinTimes;
-extern std::map<int, int> MinThreads;
 extern std::map<int, std::vector<double> > Powers;
-extern std::map<int, std::vector<std::pair<int,double>>> SortedPowers;
+extern std::map<int, std::vector<std::tuple<int,double,double>>> Paretos;
 
 int get_next_least_powerful_num_threads(int id, int cur_num_threads);
 
@@ -204,6 +203,10 @@ class Task_tmpl : public Task
 };
 }
 
+std::vector<std::tuple<int,double, double>>
+make_pareto(const std::vector<double>& time,
+            const std::vector<double>& power);
+
 template <typename Fxn, typename... Args>
 Task*
 make_task(Fxn f, const char* name, int id, const std::tuple<Args...>& t, bool isMut){
@@ -237,17 +240,7 @@ make_task(Fxn f, const char* name, int id, const std::tuple<Args...>& t, bool is
     }
     Times[id] = times;
     Powers[id] = powers;
-    for(int i = 0; i < Powers[id].size(); i++){
-      SortedPowers[id].emplace_back(i, Powers[id][i]);
-    }
-    std::sort(begin(SortedPowers[id]), end(SortedPowers[id]),
-              [](const std::pair<int,double>& a,
-                 const std::pair<int,double>& b){
-                return a.second < b.second;
-              });
-    auto min = std::min_element(std::begin(times), std::end(times));
-    MinTimes[id] = *min;
-    MinThreads[id] = std::distance(std::begin(times), min);
+    Paretos[id] = make_pareto(times, powers);
   }
   return new impl::Task_tmpl<Fxn,Args...>(f,t,id,isMut);
 }

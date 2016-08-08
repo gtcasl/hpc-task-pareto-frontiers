@@ -5,7 +5,7 @@ HEADERS := $(shell ls *.h) cholesky/cholesky.h
 
 CXX :=    icpc
 CXXFLAGS := -fPIC -O2 -g -mkl -w3 -diag-disable remark -Wunused-variable
-CPPFLAGS := -I. -std=c++11 -qoffload -pthread -qopenmp
+CPPFLAGS := -I. -std=gnu++11 -qoffload -pthread -qopenmp
 LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
 LIBS := -lmkl_rt -lmicmgmt -lrt
 

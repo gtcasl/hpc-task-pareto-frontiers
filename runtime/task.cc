@@ -12,18 +12,20 @@
 
 std::map<int,const char*> Names;
 std::map<int,std::vector<double> > Times;
-std::map<int,double> MinTimes;
-std::map<int,int> MinThreads;
 std::map<int,std::vector<double> > Powers;
-std::map<int,std::vector<std::pair<int,double>> > SortedPowers;
+std::map<int,std::vector<std::tuple<int,double,double>>> Paretos;
 
 int get_next_least_powerful_num_threads(int id,
                                         int cur_num_threads) {
-  auto current = std::make_pair(cur_num_threads, Powers[id][cur_num_threads]);
-  auto idx = std::find(begin(SortedPowers[id]), end(SortedPowers[id]), current);
-  assert(idx != end(SortedPowers[id]) && "Error: trying to find configuration that doesn't exist");
-  assert(idx != begin(SortedPowers[id]) && "Error: some power is less than zero");
-  return (idx - 1)->first;
+  auto current_power = Powers[id][cur_num_threads];
+  if(current_power == 0){
+    return 0; // already at least powerful config
+  }
+  auto idx = std::find_if(begin(Paretos[id]), end(Paretos[id]),
+                          [&](const std::tuple<int,double,double>& e){
+                            return std::get<2>(e) < current_power;});
+  assert(idx != end(Paretos[id]) && "Error: trying to find negative power?");
+  return std::get<0>(*idx);
 }
 
 Task::Task(int typeID, bool isMut) :  
@@ -83,7 +85,7 @@ Task::getNumThreads() const
 
 double Task::estimateTime() const
 {
-  double my_time = MinTimes[typeID_];
+  double my_time = std::get<1>(Paretos[typeID_][0]);
   double children_time = 0.0;
   if(!listeners_.empty()){
     double min_time = std::numeric_limits<double>::infinity();
@@ -120,5 +122,24 @@ void Task::runProfiling()
     do_run();
   }
   close(fd);
+}
+
+std::vector<std::tuple<int,double, double>>
+make_pareto(const std::vector<double>& time,
+            const std::vector<double>& power){
+  std::vector<std::tuple<int,double, double>> res;
+
+  std::vector<int> idx(time.size());
+  std::iota(begin(idx), end(idx), 0);
+  std::sort(begin(idx), end(idx),
+            [&](int a, int b){ return time[a] < time[b]; });
+  res.emplace_back(idx[0], time[idx[0]], power[idx[0]]);
+  for(const auto i : idx){
+    if(power[i] < std::get<2>(res.back())){
+      res.emplace_back(i, time[i], power[i]);
+    }
+  }
+
+  return res;
 }
 

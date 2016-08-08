@@ -474,11 +474,199 @@ AdvancedScheduler::runMaster(Task* root)
 
     bool increment_tick = true;
     if(!pendingTasks.empty()){
+      // TODO: walk down pareto frontiers, ensuring both constraints
+      std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator> task_assignments;
+      int sum_cores = 0;
+      double sum_power = 0.0;
+      for(const auto& t : pendingTasks){
+        task_assignments[t] = begin(Paretos[t->typeID()]);
+        sum_cores += std::get<0>(*task_assignments[t]);
+        sum_power += std::get<2>(*task_assignments[t]);
+      }
+      while(sum_cores > numAvailableCores() ||
+            sum_power > available_power_){
+        // 1. find assignment that reduces execution time the least
+        Task* loser = nullptr;
+        double delta_t = std::numeric_limits<double>::infinity();
+        for(auto& assignment : task_assignments){
+          if(std::get<0>(*assignment.second) == 0){
+            // this thread already get's no threads, so we can move on
+            continue;
+          }
+          auto task = assignment.first;
+          auto cur_makespan = task->estimateTime() -
+                              std::get<1>(Paretos[task->typeID()][0]) +
+                              std::get<1>(*assignment.second);
+          auto next_makespan = task->estimateTime() -
+                               std::get<1>(Paretos[task->typeID()][0]) +
+                               std::get<1>(*(assignment.second + 1));
+          auto delta = next_makespan - cur_makespan;
+          if(delta <= delta_t){
+            loser = task;
+            delta_t = delta;
+          }
+        }
+        // 2. update the assignments
+        if(loser){
+          sum_cores -= std::get<0>(*task_assignments[loser]);
+          sum_power -= std::get<2>(*task_assignments[loser]);
+          task_assignments[loser]++;
+          sum_cores += std::get<0>(*task_assignments[loser]);
+          sum_power += std::get<2>(*task_assignments[loser]);
+        } else {
+          // unable to find anything that would lower execution time (ie, nothing can run)
+          logger.log("message", "Could not find loser, breaking");
+          break;
+        }
+      }
+
+      logger.log("message","reducing available power by the sum of launched tasks",
+                 "avail_before", available_power_,
+                 "sum_power", sum_power,
+                 "avail_after", available_power_ - sum_power);
+      available_power_ -= sum_power;
+      assert(available_power_ >= 0 && "Error: trying to schedule with more power than we have available");
+
+      /*
+       * For each pending task,
+       * if task_thread_assignments[task] == 0, continue
+       * else
+       * remove task from pendingTasks
+       * assign it task_thread_assignments[task] threads
+       * pop a worker
+       * run task on worker
+       * add task to runningTasks
+       */
+      auto task_it = std::begin(pendingTasks);
+      while(task_it != std::end(pendingTasks)){
+        Task* task = *task_it;
+        auto removed = task_it++;
+        auto nthreads = std::get<0>(*task_assignments[task]);
+        if(nthreads == 0){
+          /*
+          logger.log("message", "Attempting to schedule task with zero threads",
+                     "task", Names[task->typeID()],
+                     "tick", tick_number);
+                     */
+          continue;
+        }
+        pendingTasks.erase(removed);
+        // assign task_thread_assignments[task] threads
+        for(int i = 0; i < std::get<0>(*task_assignments[task]); ++i){
+          // get an available cpu
+          int cpu = claimCpu();
+          // add it to the task
+          task->addCpu(cpu);
+          taskCpuAssignments[task].insert(cpu);
+        }
+        if(increment_tick){
+          ++tick_number;
+          increment_tick = false;
+        }
+        logger.log("start_task", "",
+                   "name", Names[task->typeID()],
+                   "tick", tick_number,
+                   "start_time", getTime(),
+                   "nthreads", std::get<0>(*task_assignments[task]));
+        pthread_t thread;
+        pthread_create(&thread, NULL, run_task, (void*)task);
+        runningTasks.push_back(thread);
+      }
+    }
+  } while (!runningTasks.empty() || !pendingTasks.empty());
+
+  double end_time = getTime();
+  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  logger.log("average_power_W", avg_power_W);
+  logger.log("max_power_W", max_power_ / 1000000.0);
+  logger.log("time_s", end_time - start_time);
+  logger.log("message", "ALL DONE");
+}
+
+void 
+ProfilingScheduler::runMaster(Task* root)
+{
+  do_profiling_ = true;
+  SequentialScheduler::runMaster(root);
+}
+
+void
+BaselineScheduler::runMaster(Task* root)
+{
+  /* TODO: Add logging to document when decisions are made,
+   * ie, out of power, out of cores, could use more cores, etc
+   */
+  Logger logger{"scheduler.log"};
+  logger.log("message", "cataloging configuration",
+             "max_threads", numAvailableCores());
+  std::cout << "Starting execution" << std::endl;
+
+  std::list<pthread_t> runningTasks;
+  std::list<Task*> pendingTasks;
+  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
+
+  // initialize power measurement on this rank
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    logger.log("error", "Unable to set up signal handler");
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  double start_time = getTime();
+
+  int tick_number = 0;
+
+  pendingTasks.push_back(root);
+  do{
+    for(auto thread = begin(runningTasks); thread != end(runningTasks);){
+      void* retval_v;
+      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
+        // read back the elapsed time from the runner and log to file
+        ThreadStats* retval = (ThreadStats*) retval_v;
+        double elapsed_seconds = retval->elapsed_seconds;
+        int nthreads = retval->nthreads;
+        Task* task = retval->task;
+        logger.log("end_task", "",
+                   "name", Names[task->typeID()],
+                   "elapsed_seconds", elapsed_seconds,
+                   "nthreads", nthreads,
+                   "end_time", getTime(),
+                   "released_listeners", task->getNumListeners());
+        task->clearListeners(pendingTasks);
+        for(const auto& cpu : taskCpuAssignments[task]){
+          returnCpu(cpu);
+        }
+        taskCpuAssignments[task].clear();
+        runningTasks.erase(thread++);
+      } else {
+        thread++;
+      }
+    }
+
+    bool increment_tick = true;
+    if(!pendingTasks.empty()){
 
       std::map<Task*,int> task_thread_assignments;
       int sum_s = 0;
       for(const auto& t : pendingTasks){
-        int minthreads = MinThreads[t->typeID()];
+        int minthreads = std::get<0>(Paretos[t->typeID()][0]);
         task_thread_assignments[t] = minthreads;
         sum_s += minthreads;
       }
@@ -504,7 +692,7 @@ AdvancedScheduler::runMaster(Task* root)
         // number of cores it has been assigned.
         double est_makespan = std::numeric_limits<double>::infinity();
         if(task_thread_assignments[t] != 0){
-          est_makespan = t->estimateTime() - MinTimes[t->typeID()] +
+          est_makespan = t->estimateTime() - std::get<1>(Paretos[t->typeID()][0]) +
             Times[t->typeID()][task_thread_assignments[t]];
         }
         est_makespans[t] = est_makespan;
@@ -532,11 +720,11 @@ AdvancedScheduler::runMaster(Task* root)
         est_makespans[min] = std::numeric_limits<double>::infinity();
         est_makespans[max] = std::numeric_limits<double>::infinity();
         if(task_thread_assignments[min] != 0){
-          est_makespans[min] = min->estimateTime() - MinTimes[min->typeID()] +
+          est_makespans[min] = min->estimateTime() - std::get<1>(Paretos[min->typeID()][0]) +
             Times[min->typeID()][task_thread_assignments[min]];
         }
         if(task_thread_assignments[max] != 0){
-          est_makespans[max] = max->estimateTime() - MinTimes[max->typeID()] +
+          est_makespans[max] = max->estimateTime() - std::get<1>(Paretos[max->typeID()][0]) +
             Times[max->typeID()][task_thread_assignments[max]];
         }
         Task* new_min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
@@ -561,85 +749,6 @@ AdvancedScheduler::runMaster(Task* root)
         max = new_max;
         min_makespan = est_makespans[max];
       }
-
-      double sum_p = 0;
-      for(const auto& t : pendingTasks){
-        if(task_thread_assignments[t] != 0){
-          sum_p += Powers[t->typeID()][task_thread_assignments[t]];
-        }
-      }
-      if(sum_p > available_power_){
-        logger.log("message", "Need to reduce workload to fit within power budget",
-                   "available", available_power_,
-                   "sum_p", sum_p);
-        while(sum_p >= available_power_){
-          // the loser is the task that slows the least with a delta in power
-          // losing task: Task*, #threads, delta t, delta p
-          // time goes up, power goes down
-          Task* losing_task = nullptr;
-          int new_threads = -1;
-          double delta_t{std::numeric_limits<double>::infinity()};
-          double delta_p = 0;
-          bool found_losing_task = false;
-          for(const auto& t : pendingTasks){
-            int old_t = task_thread_assignments[t];
-            int new_t = get_next_least_powerful_num_threads(t->typeID(), old_t);
-            if(old_t == 0){
-              continue;
-            } else {
-              found_losing_task = true;
-            }
-            double old_time = Times[t->typeID()][old_t];
-            double new_time = Times[t->typeID()][new_t];
-            if((new_time == std::numeric_limits<double>::infinity()) ||
-               (new_time - old_time < delta_t)){
-              double old_p = Powers[t->typeID()][old_t];
-              double new_p = Powers[t->typeID()][new_t];
-              losing_task = t;
-              new_threads = new_t;
-              delta_t = new_time - old_time;
-              delta_p = new_p - old_p;
-            }
-          }
-          assert(losing_task != nullptr && "Error: Unable to find a losing task");
-          if(new_threads > task_thread_assignments[losing_task]){
-            logger.log("message", "Lowering the power but increasing the number of threads",
-                       "old_threads", task_thread_assignments[losing_task],
-                       "new_threads", new_threads);
-            if(sum_s + new_threads - task_thread_assignments[losing_task] > numAvailableCores()){
-              assert(false && "Error: going over the number of available cores");
-              //logger.log("message", "Warning: going over the number of available cores");
-            }
-          }
-
-          if(!found_losing_task){
-            logger.log("message", "Unable to find a task that can lower power any more");
-            break;
-          }
-          logger.log("message", "Lowering power",
-                     "name", Names[losing_task->typeID()],
-                     "old_threads", task_thread_assignments[losing_task],
-                     "new_threads", new_threads,
-                     "delta_t", delta_t,
-                     "delta_p", delta_p,
-                     "sum_p", sum_p);
-          task_thread_assignments[losing_task] = new_threads;
-          sum_p += delta_p;
-        }
-        // TODO check to see if we make any progress
-        if(std::all_of(begin(task_thread_assignments),
-                       end(task_thread_assignments),
-                       [](const std::pair<Task*,int>& a){ return a.second == 0; })
-           && runningTasks.empty()){
-          logger.log("message", "Unable to launch a task! Must abort");
-          exit(-1);
-        }
-      } else {
-        logger.log("message", "Enough power to go around");
-      }
-
-      available_power_ -= sum_p;
-      assert(available_power_ >= 0 && "Error: trying to schedule with more power than we have available");
 
       /*
        * For each pending task,
@@ -701,24 +810,5 @@ AdvancedScheduler::runMaster(Task* root)
   logger.log("max_power_W", max_power_ / 1000000.0);
   logger.log("time_s", end_time - start_time);
   logger.log("message", "ALL DONE");
-}
-
-void 
-ProfilingScheduler::runMaster(Task* root)
-{
-  do_profiling_ = true;
-  SequentialScheduler::runMaster(root);
-}
-
-void
-BaselineScheduler::runMaster(Task* root)
-{
-  // The only difference between the baseline and the advanced scheduler is
-  // that the advanced scheduler changes its heuristic if there's non-zero power
-  // consumed by the tasks.
-  for(auto& x : Powers){
-    x.second = std::vector<double>(NUM_THREADS + 1, 0.0);
-  }
-  AdvancedScheduler::runMaster(root);
 }
 
