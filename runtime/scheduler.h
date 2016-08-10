@@ -47,7 +47,7 @@ class Scheduler
 
  protected:
   Scheduler();
-  virtual void runMaster(Task* root) = 0;
+  virtual void tick() = 0;
  private:
 
   static Scheduler* global;
@@ -63,8 +63,14 @@ class Scheduler
   double power_limit_; // I think the default of 350 is way above the TDP
   double available_power_; // amount of power that can be used at the moment
   bool do_profiling_;
-
   std::ofstream logfile_;
+  std::list<pthread_t> runningTasks_;
+  std::list<Task*> pendingTasks_;
+  std::map<Task*, std::unordered_set<int> > taskCpuAssignments_;
+  int tick_number_;
+
+  void launchTask(Task* task, int nthreads);
+
   void log(){
     logfile_ << std::endl;
   }
@@ -76,46 +82,39 @@ class Scheduler
   }
 };
 
+class SequentialScheduler : public Scheduler
+{
+  public:
+    SequentialScheduler(bool do_prof){
+      do_profiling_ = do_prof;
+    }
+  protected:
+    void tick();
+};
+
 class FairScheduler : public Scheduler
 {
   protected:
-    void runMaster(Task* root);
+    void tick();
 };
 
-class SequentialScheduler : public Scheduler
+class CoreConstrainedScheduler : public Scheduler
 {
   protected:
-    void runMaster(Task* root);
+    void tick();
 };
 
-class SimpleScheduler : public Scheduler
+class PowerAwareScheduler : public Scheduler
 {
   protected:
-    void runMaster(Task* root);
+    void tick();
+    virtual void leverageSlack(std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator>&) {}
 };
 
-class AdvancedScheduler : public Scheduler
+class SlackAwareScheduler : public PowerAwareScheduler
 {
   protected:
-    void runMaster(Task* root);
-};
-
-class NonParetoScheduler : public Scheduler
-{
-  protected:
-    void runMaster(Task* root);
-};
-
-class ProfilingScheduler : public SequentialScheduler
-{
-  protected:
-    void runMaster(Task* root);
-};
-
-class BaselineScheduler : public AdvancedScheduler
-{
-  protected:
-    void runMaster(Task* root);
+    void leverageSlack(std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator>& task_assignments);
 };
 
 #endif

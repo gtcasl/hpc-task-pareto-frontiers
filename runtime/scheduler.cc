@@ -43,7 +43,8 @@ Scheduler::Scheduler() :
   power_limit_(1000.0),
   available_power_(power_limit_),
   do_profiling_(false),
-  logfile_{"scheduler.log"}
+  logfile_{"scheduler.log"},
+  tick_number_(0)
 {
   if (global){
     fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
@@ -75,10 +76,141 @@ Scheduler::init(int argc, char** argv)
   putenv("MKL_DYNAMIC=FALSE");
 }
 
+struct ThreadStats{
+  ThreadStats(Task* t, double e, int n) : task{t}, elapsed_seconds{e}, nthreads{n} {}
+  Task* task;
+  double elapsed_seconds;
+  int nthreads;
+};
+
+void* run_task(void* params){
+  Task* task = (Task*) params;
+  double start = getTime();
+  task->run();
+  double stop = getTime();
+  double elapsed_seconds = stop - start;
+  int ncores = task->getNumThreads();
+  return new ThreadStats(task, elapsed_seconds, ncores);
+}
+
+void
+Scheduler::launchTask(Task* task, int nthreads)
+{
+  if(nthreads == 0){
+    return;
+  }
+  auto task_it = std::find(std::begin(pendingTasks_),
+                           std::end(pendingTasks_),
+                           task);
+  assert(task_it != std::end(pendingTasks_) && "Error: trying to launch task that doesn't exist");
+  pendingTasks_.erase(task_it);
+
+  for(int i = 0; i < nthreads; ++i){
+    // get an available cpu
+    int cpu = claimCpu();
+    // add it to the task
+    task->addCpu(cpu);
+    taskCpuAssignments_[task].insert(cpu);
+  }
+  available_power_ -= Powers[task->typeID()][nthreads];
+  log("start_task", "",
+      "name", Names[task->typeID()],
+      "tick", tick_number_,
+      "start_time", getTime(),
+      "nthreads", nthreads);
+  pthread_t thread;
+  pthread_create(&thread, NULL, run_task, (void*)task);
+  runningTasks_.push_back(thread);
+}
+
 void
 Scheduler::run(Task* root)
 {
-  runMaster(root);
+  log("message","cataloging configuration",
+      "max_threads", numAvailableCores(),
+      "power_limit", power_limit_);
+  // initialize power measurement on this rank
+  cumulative_power_ = 0;
+  num_power_samples_ = 0;
+  max_power_ = 0;
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    log("error", "Unable to set up signal handler");
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  double start_time = getTime();
+
+  pendingTasks_.push_back(root);
+  bool task_completed = true;
+  do{
+    // finish completed tasks
+    for(auto thread = begin(runningTasks_);
+        thread != end(runningTasks_);){
+      void* retval_v;
+      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
+        task_completed = true;
+        // read back the elapsed time from the runner and log to file
+        ThreadStats* retval = (ThreadStats*) retval_v;
+        double elapsed_seconds = retval->elapsed_seconds;
+        int nthreads = retval->nthreads;
+        Task* task = retval->task;
+        auto predicted_time = Times[task->typeID()][nthreads];
+        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
+        auto avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+        log("end_task", "",
+            "name", Names[task->typeID()],
+            "elapsed_seconds", elapsed_seconds,
+            "predicted_seconds", predicted_time,
+            "time_percent_error", percent_error,
+            "nthreads", nthreads,
+            "end_time", getTime(),
+            "avg_power_W", avg_power_W,
+            "max_power_W", max_power_ / 1000000.0,
+            "avg_time_s", elapsed_seconds / task->getIters(),
+            "released_listeners", task->getNumListeners());
+        task->clearListeners(pendingTasks_);
+        for(const auto& cpu : taskCpuAssignments_[task]){
+          returnCpu(cpu);
+        }
+        available_power_ += Powers[task->typeID()][nthreads];
+        taskCpuAssignments_[task].clear();
+        runningTasks_.erase(thread++);
+      } else {
+        thread++;
+      }
+    }
+    // launch new tasks
+    if(task_completed && !pendingTasks_.empty()){
+      tick_number_++;
+      task_completed = false;
+      tick();
+    }
+  } while (!runningTasks_.empty() || !pendingTasks_.empty());
+
+  double end_time = getTime();
+  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  log("average_power_W", avg_power_W);
+  log("max_power_W", max_power_ / 1000000.0);
+  log("time_s", end_time - start_time);
+  log("message", "ALL DONE");
 }
 
 void
@@ -157,943 +289,198 @@ void Scheduler::overflow(int signum, siginfo_t*, void*){
   }
 }
 
-struct ThreadStats{
-  ThreadStats(Task* t, double e, int n) : task{t}, elapsed_seconds{e}, nthreads{n} {}
-  Task* task;
-  double elapsed_seconds;
-  int nthreads;
-};
-
-void* run_task(void* params){
-  Task* task = (Task*) params;
-  double start = getTime();
-  task->run();
-  double stop = getTime();
-  double elapsed_seconds = stop - start;
-  int ncores = task->getNumThreads();
-  return new ThreadStats(task, elapsed_seconds, ncores);
-}
-
 void
-SequentialScheduler::runMaster(Task* root)
+SequentialScheduler::tick()
 {
   int iter_num_threads = numAvailableCores();
-  log("message", "cataloging configuration",
-             "max_threads", numAvailableCores());
 
-  double start_time = getTime();
-  std::list<Task*> pendingTasks;
-
-  // initialize power measurement on this rank
-
-  struct sigaction sa;
-  sa.sa_sigaction = overflow;
-  sa.sa_flags = SA_SIGINFO;
-  if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    log("error", "Unable to set up signal handler");
-    abort();
-  }
-  struct itimerval work_time;
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
-  work_time.it_interval.tv_sec = 0;
-  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
-  if(setitimer(ITIMER_REAL, &work_time, NULL) == -1){
-    std::cout << "Unable to set timer" << std::endl;
-  }
-
+  Task* task = pendingTasks_.front();
+  max_power_ = 0;
   cumulative_power_ = 0;
   num_power_samples_ = 0;
-
-  pendingTasks.push_back(root);
-  while(!pendingTasks.empty()){
-    /*
-     * For each pending task,
-     * if task_thread_assignments[task] == 0, continue
-     * else
-     * remove task from pendingTasks
-     * assign it task_thread_assignments[task] threads
-     * pop a worker
-     * run task on worker
-     * add task to runningTasks
-     */
-    Task* task = pendingTasks.front();
-    pendingTasks.pop_front();
-    for(int i = 0; i < numAvailableCores(); ++i){
-      // get an available cpu
-      //int cpu = claimCpu();
-      // add it to the task
-      task->addCpu(i);
-    }
-    log("start_task", "",
-               "name", Names[task->typeID()],
-               "nthreads", iter_num_threads);
-    max_power_ = 0;
-    cumulative_power_ = 0;
-    num_power_samples_ = 0;
-    pthread_t thread;
-    if(do_profiling_ && task->canProfile()){
-      task->enableProfiling();
-    }
-    pthread_create(&thread, NULL, run_task, (void*)task);
-    void* retval_v;
-    pthread_join(thread, &retval_v);
-    ThreadStats* retval = (ThreadStats*) retval_v;
-    // read back the elapsed time from the runner and log to file
-    double elapsed_seconds = retval->elapsed_seconds;
-    int nthreads = retval->nthreads;
-    double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
-    log("end_task", "",
-               "name", Names[task->typeID()],
-               "elapsed_seconds", elapsed_seconds,
-               "nthreads", nthreads,
-               "end_time", getTime(),
-               "avg_power_W", avg_power_W,
-               "max_power_W", max_power_ / 1000000.0,
-               "avg_time_s", elapsed_seconds / task->getIters(),
-               "released_listeners", task->getNumListeners());
-    task->clearListeners(pendingTasks);
-    delete retval;
+  if(do_profiling_ && task->canProfile()){
+    task->enableProfiling();
   }
-
-  double end_time = getTime();
-
-  // finalize power measurement on this rank
-  struct sigaction sa2;
-  sa2.sa_handler = SIG_IGN;
-  sigaction(SIGALRM, &sa2, nullptr);
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 0;
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  log("time_s", end_time - start_time);
-  log("message", "ALL DONE");
+  launchTask(task, iter_num_threads);
 }
   
 void
-SimpleScheduler::runMaster(Task* root)
+FairScheduler::tick()
 {
-  log("message", "cataloging configuration",
-             "max_threads", numAvailableCores());
-
-  std::list<pthread_t> runningTasks;
-  std::list<Task*> pendingTasks;
-  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
-
-  int availableWorkers = 3;
-
-  // initialize power measurement on this rank
-  struct sigaction sa;
-  sa.sa_sigaction = overflow;
-  sa.sa_flags = SA_SIGINFO;
-  if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    log("error", "Unable to set up signal handler");
-    abort();
+  int threads_per_worker = numAvailableCores() / pendingTasks_.size();
+  int remainder = numAvailableCores() % pendingTasks_.size();
+  int numtasks = pendingTasks_.size();
+  for(int i = 0; i < numtasks; i++){
+    int nthreads = threads_per_worker;
+    if(i < remainder){
+      nthreads++;
+    }
+    if(nthreads != 0){
+      auto task = pendingTasks_.front();
+      launchTask(task, nthreads);
+    }
   }
-  struct itimerval work_time;
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
-  work_time.it_interval.tv_sec = 0;
-  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  double start_time = getTime();
-
-  int tick_number = 0;
-
-  pendingTasks.push_back(root);
-  do{
-    for(auto thread = begin(runningTasks);
-        thread != end(runningTasks);){
-      void* retval_v;
-      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
-        // read back the elapsed time from the runner and log to file
-        availableWorkers++;
-        ThreadStats* retval = (ThreadStats*) retval_v;
-        double elapsed_seconds = retval->elapsed_seconds;
-        int nthreads = retval->nthreads;
-        Task* task = retval->task;
-        log("end_task", "",
-                   "name", Names[task->typeID()],
-                   "elapsed_seconds", elapsed_seconds,
-                   "nthreads", nthreads,
-                   "end_time", getTime(),
-                   "released_listeners", task->getNumListeners());
-        task->clearListeners(pendingTasks);
-        for(const auto& cpu : taskCpuAssignments[task]){
-          returnCpu(cpu);
-        }
-        available_power_ += Powers[task->typeID()][nthreads];
-        taskCpuAssignments[task].clear();
-        runningTasks.erase(thread++);
-      } else {
-        thread++;
-      }
-    }
-
-    bool increment_tick = true;
-    if(!pendingTasks.empty()){
-      /*
-       * For each pending task,
-       * if task_thread_assignments[task] == 0, continue
-       * else
-       * remove task from pendingTasks
-       * assign it task_thread_assignments[task] threads
-       * pop a worker
-       * run task on worker
-       * add task to runningTasks
-       */
-      int launches = pendingTasks.size() > availableWorkers ? availableWorkers : pendingTasks.size();
-      int threads_per_worker = availableWorkers == 0 ? 0 : numAvailableCores() / launches;
-      for(int i = 0; i < launches && threads_per_worker > 0; i++){
-        auto task = pendingTasks.front();
-        pendingTasks.pop_front();
-        // assign task_thread_assignments[task] threads
-        for(int i = 0; i < threads_per_worker; ++i){
-          // get an available cpu
-          int cpu = claimCpu();
-          // add it to the task
-          task->addCpu(cpu);
-          taskCpuAssignments[task].insert(cpu);
-        }
-        if(increment_tick){
-          ++tick_number;
-          increment_tick = false;
-        }
-        log("start_task", "",
-                   "name", Names[task->typeID()],
-                   "tick", tick_number,
-                   "start_time", getTime(),
-                   "nthreads", threads_per_worker);
-        pthread_t thread;
-        pthread_create(&thread, NULL, run_task, (void*)task);
-        runningTasks.push_back(thread);
-        availableWorkers--;
-      }
-    }
-  } while (!runningTasks.empty());
-
-  double end_time = getTime();
-  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
-
-  // finalize power measurement on this rank
-  struct sigaction sa2;
-  sa2.sa_handler = SIG_IGN;
-  sigaction(SIGALRM, &sa2, nullptr);
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 0;
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  log("average_power_W", avg_power_W);
-  log("max_power_W", max_power_ / 1000000.0);
-  log("time_s", end_time - start_time);
-  log("message", "ALL DONE");
 }
 
 void
-NonParetoScheduler::runMaster(Task* root)
+CoreConstrainedScheduler::tick()
 {
   /* TODO: Add logging to document when decisions are made,
    * ie, out of power, out of cores, could use more cores, etc
    */
-  log("message", "cataloging configuration",
-             "power_limit", power_limit_,
-             "max_threads", numAvailableCores());
-  std::cout << "Starting execution" << std::endl;
 
-  std::list<pthread_t> runningTasks;
-  std::list<Task*> pendingTasks;
-  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
-
-  // initialize power measurement on this rank
-  struct sigaction sa;
-  sa.sa_sigaction = overflow;
-  sa.sa_flags = SA_SIGINFO;
-  if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    log("error", "Unable to set up signal handler");
-    abort();
+  std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator> task_assignments;
+  int sum_cores = 0;
+  for(const auto& t : pendingTasks_){
+    task_assignments[t] = begin(Paretos[t->typeID()]);
+    sum_cores += std::get<0>(*task_assignments[t]);
   }
-  struct itimerval work_time;
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
-  work_time.it_interval.tv_sec = 0;
-  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  double start_time = getTime();
-
-  int tick_number = 0;
-
-  pendingTasks.push_back(root);
-  do{
-    for(auto thread = begin(runningTasks); thread != end(runningTasks);){
-      void* retval_v;
-      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
-        // read back the elapsed time from the runner and log to file
-        ThreadStats* retval = (ThreadStats*) retval_v;
-        double elapsed_seconds = retval->elapsed_seconds;
-        int nthreads = retval->nthreads;
-        Task* task = retval->task;
-        auto predicted_time = Times[task->typeID()][nthreads];
-        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
-        log("end_task", "",
-                   "name", Names[task->typeID()],
-                   "elapsed_seconds", elapsed_seconds,
-                   "predicted_seconds", predicted_time,
-                   "time_percent_error", percent_error,
-                   "nthreads", nthreads,
-                   "end_time", getTime(),
-                   "released_listeners", task->getNumListeners());
-        task->clearListeners(pendingTasks);
-        for(const auto& cpu : taskCpuAssignments[task]){
-          returnCpu(cpu);
-        }
-        taskCpuAssignments[task].clear();
-        runningTasks.erase(thread++);
-      } else {
-        thread++;
+  while(sum_cores > numAvailableCores()){
+    // 1. find assignment that minimizes the maximum execution time 
+    Task* loser = nullptr;
+    double max_t = std::numeric_limits<double>::infinity();
+    for(auto& assignment : task_assignments){
+      if(std::get<0>(*assignment.second) == 0){
+        // this thread already get's no threads, so we can move on
+        continue;
       }
-    }
-
-    bool increment_tick = true;
-    if(!pendingTasks.empty()){
-      // TODO: walk down Times, ensuring thread constraint
-      std::map<Task*, int> task_assignments;
-      int sum_cores = 0;
-      for(const auto& t : pendingTasks){
-        auto cores = std::get<0>(Paretos[t->typeID()][0]);
-        task_assignments[t] = cores;
-        sum_cores += cores;
-      }
-      while(sum_cores > numAvailableCores()){
-        // 1. find assignment that reduces execution time the least
-        Task* loser = nullptr;
-        double delta_t = std::numeric_limits<double>::infinity();
-        for(auto& assignment : task_assignments){
-          if(assignment.second == 0){
-            // this thread already get's no threads, so we can move on
-            continue;
-          }
-          auto task = assignment.first;
-          auto cur_makespan = task->estimateTime() -
-                              std::get<1>(Paretos[task->typeID()][0]) +
-                              Times[task->typeID()][assignment.second];
-          auto next_makespan = task->estimateTime() -
-                               std::get<1>(Paretos[task->typeID()][0]) +
-                               Times[task->typeID()][assignment.second - 1];
-          auto delta = next_makespan - cur_makespan;
-          if(delta <= delta_t){
-            loser = task;
-            delta_t = delta;
-          }
-        }
-        // 2. update the assignments
-        if(loser){
-          task_assignments[loser]--;
-          sum_cores--;
-        } else {
-          // unable to find anything that would lower execution time (ie, nothing can run)
-          log("message", "Could not find loser, breaking");
-          break;
-        }
-      }
-
+      auto task = assignment.first;
+      auto time = std::get<1>(*(assignment.second + 1));
       /*
-       * For each pending task,
-       * if task_thread_assignments[task] == 0, continue
-       * else
-       * remove task from pendingTasks
-       * assign it task_thread_assignments[task] threads
-       * pop a worker
-       * run task on worker
-       * add task to runningTasks
-       */
-      auto task_it = std::begin(pendingTasks);
-      while(task_it != std::end(pendingTasks)){
-        Task* task = *task_it;
-        auto removed = task_it++;
-        auto nthreads = task_assignments[task];
-        if(nthreads == 0){
-          /*
-          log("message", "Attempting to schedule task with zero threads",
-                     "task", Names[task->typeID()],
-                     "tick", tick_number);
-                     */
-          continue;
-        }
-        pendingTasks.erase(removed);
-        // assign task_thread_assignments[task] threads
-        for(int i = 0; i < nthreads; ++i){
-          // get an available cpu
-          int cpu = claimCpu();
-          // add it to the task
-          task->addCpu(cpu);
-          taskCpuAssignments[task].insert(cpu);
-        }
-        if(increment_tick){
-          ++tick_number;
-          increment_tick = false;
-        }
-        log("start_task", "",
-                   "name", Names[task->typeID()],
-                   "tick", tick_number,
-                   "start_time", getTime(),
-                   "nthreads", nthreads);
-        pthread_t thread;
-        pthread_create(&thread, NULL, run_task, (void*)task);
-        runningTasks.push_back(thread);
+      auto cur_makespan = task->estimateTime() -
+                          std::get<1>(Paretos[task->typeID()][0]) +
+                          std::get<1>(*assignment.second);
+      auto next_makespan = task->estimateTime() -
+                           std::get<1>(Paretos[task->typeID()][0]) +
+                           std::get<1>(*(assignment.second + 1));
+      */
+      if(time <= max_t){
+        loser = task;
+        max_t = time;
       }
     }
-  } while (!runningTasks.empty() || !pendingTasks.empty());
+    // 2. update the assignments
+    assert(loser && "Error: could not find losing task, but something should always be able to slow down");
 
-  double end_time = getTime();
-  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+    sum_cores -= std::get<0>(*task_assignments[loser]);
+    task_assignments[loser]++;
+    sum_cores += std::get<0>(*task_assignments[loser]);
+  }
 
-  // finalize power measurement on this rank
-  struct sigaction sa2;
-  sa2.sa_handler = SIG_IGN;
-  sigaction(SIGALRM, &sa2, nullptr);
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 0;
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  log("average_power_W", avg_power_W);
-  log("max_power_W", max_power_ / 1000000.0);
-  log("time_s", end_time - start_time);
-  log("message", "ALL DONE");
+  for(auto& assignment : task_assignments){
+    auto task = assignment.first;
+    auto nthreads = std::get<0>(*assignment.second);
+    launchTask(task, nthreads);
+  }
 }
 
 void
-AdvancedScheduler::runMaster(Task* root)
+PowerAwareScheduler::tick()
 {
   /* TODO: Add logging to document when decisions are made,
    * ie, out of power, out of cores, could use more cores, etc
    */
-  log("message", "cataloging configuration",
-             "power_limit", power_limit_,
-             "max_threads", numAvailableCores());
-  std::cout << "Starting execution" << std::endl;
 
-  std::list<pthread_t> runningTasks;
-  std::list<Task*> pendingTasks;
-  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
-
-  // initialize power measurement on this rank
-  struct sigaction sa;
-  sa.sa_sigaction = overflow;
-  sa.sa_flags = SA_SIGINFO;
-  if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    log("error", "Unable to set up signal handler");
-    abort();
+  // walk down pareto frontiers, ensuring both constraints
+  std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator> task_assignments;
+  int sum_cores = 0;
+  double sum_power = 0.0;
+  for(const auto& t : pendingTasks_){
+    task_assignments[t] = begin(Paretos[t->typeID()]);
+    sum_cores += std::get<0>(*task_assignments[t]);
+    sum_power += std::get<2>(*task_assignments[t]);
   }
-  struct itimerval work_time;
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
-  work_time.it_interval.tv_sec = 0;
-  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  double start_time = getTime();
-
-  int tick_number = 0;
-
-  pendingTasks.push_back(root);
-  do{
-    for(auto thread = begin(runningTasks); thread != end(runningTasks);){
-      void* retval_v;
-      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
-        // read back the elapsed time from the runner and log to file
-        ThreadStats* retval = (ThreadStats*) retval_v;
-        double elapsed_seconds = retval->elapsed_seconds;
-        int nthreads = retval->nthreads;
-        Task* task = retval->task;
-        auto predicted_time = Times[task->typeID()][nthreads];
-        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
-        log("end_task", "",
-                   "name", Names[task->typeID()],
-                   "elapsed_seconds", elapsed_seconds,
-                   "predicted_seconds", predicted_time,
-                   "time_percent_error", percent_error,
-                   "nthreads", nthreads,
-                   "end_time", getTime(),
-                   "released_listeners", task->getNumListeners());
-        task->clearListeners(pendingTasks);
-        for(const auto& cpu : taskCpuAssignments[task]){
-          returnCpu(cpu);
-        }
-        available_power_ += Powers[task->typeID()][nthreads];
-        taskCpuAssignments[task].clear();
-        runningTasks.erase(thread++);
-      } else {
-        thread++;
+  while(sum_cores > numAvailableCores() ||
+        sum_power > available_power_){
+    // 1. find assignment that minimizes the maximum execution time 
+    Task* loser = nullptr;
+    double max_t = std::numeric_limits<double>::infinity();
+    for(auto& assignment : task_assignments){
+      if(std::get<0>(*assignment.second) == 0){
+        // this thread already get's no threads, so we can move on
+        continue;
       }
-    }
-
-    bool increment_tick = true;
-    if(!pendingTasks.empty()){
-      // TODO: walk down pareto frontiers, ensuring both constraints
-      std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator> task_assignments;
-      int sum_cores = 0;
-      double sum_power = 0.0;
-      for(const auto& t : pendingTasks){
-        task_assignments[t] = begin(Paretos[t->typeID()]);
-        sum_cores += std::get<0>(*task_assignments[t]);
-        sum_power += std::get<2>(*task_assignments[t]);
-      }
-      while(sum_cores > numAvailableCores() ||
-            sum_power > available_power_){
-        // 1. find assignment that reduces execution time the least
-        Task* loser = nullptr;
-        double delta_t = std::numeric_limits<double>::infinity();
-        for(auto& assignment : task_assignments){
-          if(std::get<0>(*assignment.second) == 0){
-            // this thread already get's no threads, so we can move on
-            continue;
-          }
-          auto task = assignment.first;
-          auto cur_makespan = task->estimateTime() -
-                              std::get<1>(Paretos[task->typeID()][0]) +
-                              std::get<1>(*assignment.second);
-          auto next_makespan = task->estimateTime() -
-                               std::get<1>(Paretos[task->typeID()][0]) +
-                               std::get<1>(*(assignment.second + 1));
-          auto delta = next_makespan - cur_makespan;
-          if(delta <= delta_t){
-            loser = task;
-            delta_t = delta;
-          }
-        }
-        // 2. update the assignments
-        if(loser){
-          sum_cores -= std::get<0>(*task_assignments[loser]);
-          sum_power -= std::get<2>(*task_assignments[loser]);
-          task_assignments[loser]++;
-          sum_cores += std::get<0>(*task_assignments[loser]);
-          sum_power += std::get<2>(*task_assignments[loser]);
-        } else {
-          // unable to find anything that would lower execution time (ie, nothing can run)
-          log("message", "Could not find loser, breaking");
-          break;
-        }
-      }
-
-      available_power_ -= sum_power;
-      assert(available_power_ >= 0 && "Error: trying to schedule with more power than we have available");
-
+      auto task = assignment.first;
+      auto time = std::get<1>(*(assignment.second + 1));
       /*
-       * For each pending task,
-       * if task_thread_assignments[task] == 0, continue
-       * else
-       * remove task from pendingTasks
-       * assign it task_thread_assignments[task] threads
-       * pop a worker
-       * run task on worker
-       * add task to runningTasks
-       */
-      auto task_it = std::begin(pendingTasks);
-      while(task_it != std::end(pendingTasks)){
-        Task* task = *task_it;
-        auto removed = task_it++;
-        auto nthreads = std::get<0>(*task_assignments[task]);
-        if(nthreads == 0){
-          /*
-          log("message", "Attempting to schedule task with zero threads",
-                     "task", Names[task->typeID()],
-                     "tick", tick_number);
-                     */
-          continue;
-        }
-        pendingTasks.erase(removed);
-        // assign task_thread_assignments[task] threads
-        for(int i = 0; i < std::get<0>(*task_assignments[task]); ++i){
-          // get an available cpu
-          int cpu = claimCpu();
-          // add it to the task
-          task->addCpu(cpu);
-          taskCpuAssignments[task].insert(cpu);
-        }
-        if(increment_tick){
-          ++tick_number;
-          increment_tick = false;
-        }
-        log("start_task", "",
-                   "name", Names[task->typeID()],
-                   "tick", tick_number,
-                   "start_time", getTime(),
-                   "nthreads", std::get<0>(*task_assignments[task]));
-        pthread_t thread;
-        pthread_create(&thread, NULL, run_task, (void*)task);
-        runningTasks.push_back(thread);
+      auto cur_makespan = task->estimateTime() -
+                          std::get<1>(Paretos[task->typeID()][0]) +
+                          std::get<1>(*assignment.second);
+      auto next_makespan = task->estimateTime() -
+                           std::get<1>(Paretos[task->typeID()][0]) +
+                           std::get<1>(*(assignment.second + 1));
+      */
+      if(time <= max_t){
+        loser = task;
+        max_t = time;
       }
     }
-  } while (!runningTasks.empty() || !pendingTasks.empty());
+    // 2. update the assignments
+    assert(loser && "Error: could not find losing task, but something should always be able to slow down");
 
-  double end_time = getTime();
-  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+    sum_cores -= std::get<0>(*task_assignments[loser]);
+    sum_power -= std::get<2>(*task_assignments[loser]);
+    task_assignments[loser]++;
+    sum_cores += std::get<0>(*task_assignments[loser]);
+    sum_power += std::get<2>(*task_assignments[loser]);
+  }
 
-  // finalize power measurement on this rank
-  struct sigaction sa2;
-  sa2.sa_handler = SIG_IGN;
-  sigaction(SIGALRM, &sa2, nullptr);
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 0;
-  setitimer(ITIMER_REAL, &work_time, NULL);
+  // perform additional power savings if we remain within our power budget
+  leverageSlack(task_assignments);
+  double max_t = 0.0;
+  for(auto& assignment : task_assignments){
+    if(std::get<0>(*assignment.second)){
+      continue;
+    }
+    auto time = std::get<1>(*assignment.second);
+    if(time > max_t){
+      max_t = time;
+    }
+  }
+  for(auto& assignment : task_assignments){
+    if(std::get<0>(*assignment.second)){
+      continue;
+    }
+    while(1){
+      auto new_time = std::get<1>(*(assignment.second + 1));
+      if(new_time <= max_t){
+        assignment.second++;
+      } else {
+        break;
+      }
+    }
+  }
 
-  log("average_power_W", avg_power_W);
-  log("max_power_W", max_power_ / 1000000.0);
-  log("time_s", end_time - start_time);
-  log("message", "ALL DONE");
+  for(auto& assignment : task_assignments){
+    auto nthreads = std::get<0>(*assignment.second);
+    launchTask(assignment.first, nthreads);
+  }
 }
 
-void 
-ProfilingScheduler::runMaster(Task* root)
+void SlackAwareScheduler::leverageSlack(std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator>& task_assignments)
 {
-  do_profiling_ = true;
-  SequentialScheduler::runMaster(root);
-}
-
-void
-FairScheduler::runMaster(Task* root)
-{
-  log("message", "cataloging configuration",
-             "max_threads", numAvailableCores());
-
-  std::list<pthread_t> runningTasks;
-  std::list<Task*> pendingTasks;
-  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
-
-  // initialize power measurement on this rank
-  struct sigaction sa;
-  sa.sa_sigaction = overflow;
-  sa.sa_flags = SA_SIGINFO;
-  if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    log("error", "Unable to set up signal handler");
-    abort();
+  double max_t = 0.0;
+  for(auto& assignment : task_assignments){
+    if(std::get<0>(*assignment.second)){
+      continue;
+    }
+    auto time = std::get<1>(*assignment.second);
+    if(time > max_t){
+      max_t = time;
+    }
   }
-  struct itimerval work_time;
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
-  work_time.it_interval.tv_sec = 0;
-  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  double start_time = getTime();
-
-  int tick_number = 0;
-
-  pendingTasks.push_back(root);
-  do{
-    for(auto thread = begin(runningTasks);
-        thread != end(runningTasks);){
-      void* retval_v;
-      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
-        // read back the elapsed time from the runner and log to file
-        ThreadStats* retval = (ThreadStats*) retval_v;
-        double elapsed_seconds = retval->elapsed_seconds;
-        int nthreads = retval->nthreads;
-        Task* task = retval->task;
-        auto predicted_time = Times[task->typeID()][nthreads];
-        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
-        log("end_task", "",
-                   "name", Names[task->typeID()],
-                   "elapsed_seconds", elapsed_seconds,
-                   "predicted_seconds", predicted_time,
-                   "time_percent_error", percent_error,
-                   "nthreads", nthreads,
-                   "end_time", getTime(),
-                   "released_listeners", task->getNumListeners());
-        task->clearListeners(pendingTasks);
-        for(const auto& cpu : taskCpuAssignments[task]){
-          returnCpu(cpu);
-        }
-        available_power_ += Powers[task->typeID()][nthreads];
-        taskCpuAssignments[task].clear();
-        runningTasks.erase(thread++);
+  for(auto& assignment : task_assignments){
+    if(std::get<0>(*assignment.second)){
+      continue;
+    }
+    while(1){
+      auto new_time = std::get<1>(*(assignment.second + 1));
+      if(new_time <= max_t){
+        assignment.second++;
       } else {
-        thread++;
+        break;
       }
     }
-
-    bool increment_tick = true;
-    if(!pendingTasks.empty()){
-      /*
-       * For each pending task,
-       * if task_thread_assignments[task] == 0, continue
-       * else
-       * remove task from pendingTasks
-       * assign it task_thread_assignments[task] threads
-       * pop a worker
-       * run task on worker
-       * add task to runningTasks
-       */
-      int threads_per_worker = numAvailableCores() / pendingTasks.size();
-      int remainder = numAvailableCores() % pendingTasks.size();
-      for(int i = 0; numAvailableCores() != 0 && i < pendingTasks.size(); i++){
-        auto task = pendingTasks.front();
-        pendingTasks.pop_front();
-        // assign task_thread_assignments[task] threads
-        for(int i = 0; i < threads_per_worker; ++i){
-          // get an available cpu
-          int cpu = claimCpu();
-          // add it to the task
-          task->addCpu(cpu);
-          taskCpuAssignments[task].insert(cpu);
-        }
-        // get rid of one of the remainders
-        if(remainder != 0){
-          // get an available cpu
-          int cpu = claimCpu();
-          // add it to the task
-          task->addCpu(cpu);
-          taskCpuAssignments[task].insert(cpu);
-          remainder--;
-        }
-        if(increment_tick){
-          ++tick_number;
-          increment_tick = false;
-        }
-        log("start_task", "",
-                   "name", Names[task->typeID()],
-                   "tick", tick_number,
-                   "start_time", getTime(),
-                   "nthreads", threads_per_worker);
-        pthread_t thread;
-        pthread_create(&thread, NULL, run_task, (void*)task);
-        runningTasks.push_back(thread);
-      }
-    }
-  } while (!runningTasks.empty());
-
-  double end_time = getTime();
-  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
-
-  // finalize power measurement on this rank
-  struct sigaction sa2;
-  sa2.sa_handler = SIG_IGN;
-  sigaction(SIGALRM, &sa2, nullptr);
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 0;
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  log("average_power_W", avg_power_W);
-  log("max_power_W", max_power_ / 1000000.0);
-  log("time_s", end_time - start_time);
-  log("message", "ALL DONE");
-}
-
-void
-BaselineScheduler::runMaster(Task* root)
-{
-  /* TODO: Add logging to document when decisions are made,
-   * ie, out of power, out of cores, could use more cores, etc
-   */
-  log("message", "cataloging configuration",
-             "max_threads", numAvailableCores());
-  std::cout << "Starting execution" << std::endl;
-
-  std::list<pthread_t> runningTasks;
-  std::list<Task*> pendingTasks;
-  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
-
-  // initialize power measurement on this rank
-  struct sigaction sa;
-  sa.sa_sigaction = overflow;
-  sa.sa_flags = SA_SIGINFO;
-  if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    log("error", "Unable to set up signal handler");
-    abort();
   }
-  struct itimerval work_time;
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
-  work_time.it_interval.tv_sec = 0;
-  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  double start_time = getTime();
-
-  int tick_number = 0;
-
-  pendingTasks.push_back(root);
-  do{
-    for(auto thread = begin(runningTasks); thread != end(runningTasks);){
-      void* retval_v;
-      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
-        // read back the elapsed time from the runner and log to file
-        ThreadStats* retval = (ThreadStats*) retval_v;
-        double elapsed_seconds = retval->elapsed_seconds;
-        int nthreads = retval->nthreads;
-        Task* task = retval->task;
-        auto predicted_time = Times[task->typeID()][nthreads];
-        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
-        log("end_task", "",
-                   "name", Names[task->typeID()],
-                   "elapsed_seconds", elapsed_seconds,
-                   "predicted_seconds", predicted_time,
-                   "time_percent_error", percent_error,
-                   "nthreads", nthreads,
-                   "end_time", getTime(),
-                   "released_listeners", task->getNumListeners());
-        task->clearListeners(pendingTasks);
-        for(const auto& cpu : taskCpuAssignments[task]){
-          returnCpu(cpu);
-        }
-        taskCpuAssignments[task].clear();
-        runningTasks.erase(thread++);
-      } else {
-        thread++;
-      }
-    }
-
-    bool increment_tick = true;
-    if(!pendingTasks.empty()){
-
-      std::map<Task*,int> task_thread_assignments;
-      int sum_s = 0;
-      for(const auto& t : pendingTasks){
-        int minthreads = std::get<0>(Paretos[t->typeID()][0]);
-        task_thread_assignments[t] = minthreads;
-        sum_s += minthreads;
-      }
-      if(sum_s > numAvailableCores()){
-        log("message", "Scaling desired threads to those available");
-        int new_sum_s = 0;
-        for(auto& s : task_thread_assignments){
-          s.second = std::floor((double)numAvailableCores() / sum_s * s.second);
-          new_sum_s += s.second;
-        }
-        sum_s = new_sum_s;
-      }else{
-        log("message", "Enough threads to go around");
-      }
-
-      // Shuffle threads around until we minimize makespan
-      std::map<Task*,double> est_makespans;
-      for(const auto& t : pendingTasks){
-        // Estimate the longest time from this task to completion of the DAG.
-        // estimateTime uses the best possible exec time for each task on longest
-        // path, including this task, so we have to subtract it out and in its
-        // place use the actual predicted execution time for this task with the 
-        // number of cores it has been assigned.
-        double est_makespan = std::numeric_limits<double>::infinity();
-        if(task_thread_assignments[t] != 0){
-          est_makespan = t->estimateTime() - std::get<1>(Paretos[t->typeID()][0]) +
-            Times[t->typeID()][task_thread_assignments[t]];
-        }
-        est_makespans[t] = est_makespan;
-      }
-      Task* min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
-                                   [](const std::pair<Task*,double>& a,
-                                      const std::pair<Task*,double>& b){
-                                   return a.second < b.second;
-                                   })->first;
-      Task* max = std::max_element(std::begin(est_makespans), std::end(est_makespans),
-                                   [](const std::pair<Task*,double>& a,
-                                      const std::pair<Task*,double>& b){
-                                   return a.second < b.second;
-                                   })->first;
-      double min_makespan = est_makespans[max];
-      while(1){
-        if(min == max){
-          break;
-        }
-        if(task_thread_assignments[min] == 0){
-          break;
-        }
-        --task_thread_assignments[min];
-        ++task_thread_assignments[max];
-        est_makespans[min] = std::numeric_limits<double>::infinity();
-        est_makespans[max] = std::numeric_limits<double>::infinity();
-        if(task_thread_assignments[min] != 0){
-          est_makespans[min] = min->estimateTime() - std::get<1>(Paretos[min->typeID()][0]) +
-            Times[min->typeID()][task_thread_assignments[min]];
-        }
-        if(task_thread_assignments[max] != 0){
-          est_makespans[max] = max->estimateTime() - std::get<1>(Paretos[max->typeID()][0]) +
-            Times[max->typeID()][task_thread_assignments[max]];
-        }
-        Task* new_min = std::min_element(std::begin(est_makespans), std::end(est_makespans),
-                                         [](const std::pair<Task*,double>& a,
-                                            const std::pair<Task*,double>& b){
-                                             return a.second < b.second;
-                                         })->first;
-        Task* new_max = std::max_element(std::begin(est_makespans), std::end(est_makespans),
-                                         [](const std::pair<Task*,double>& a,
-                                            const std::pair<Task*,double>& b){
-                                             return a.second < b.second;
-                                         })->first;
-        // new config is not an improvement
-        if(est_makespans[new_max] >= min_makespan){
-          ++task_thread_assignments[min];
-          --task_thread_assignments[max];
-          break;
-        }
-
-        // replace min/max/min_makespan
-        min = new_min;
-        max = new_max;
-        min_makespan = est_makespans[max];
-      }
-
-      /*
-       * For each pending task,
-       * if task_thread_assignments[task] == 0, continue
-       * else
-       * remove task from pendingTasks
-       * assign it task_thread_assignments[task] threads
-       * pop a worker
-       * run task on worker
-       * add task to runningTasks
-       */
-      auto task_it = std::begin(pendingTasks);
-      while(task_it != std::end(pendingTasks)){
-        Task* task = *task_it;
-        auto removed = task_it++;
-        if(task_thread_assignments[task] == 0){
-          log("message", "Attempting to schedule task with zero threads",
-                     "task", Names[task->typeID()],
-                     "tick", tick_number);
-          continue;
-        }
-        pendingTasks.erase(removed);
-        // assign task_thread_assignments[task] threads
-        for(int i = 0; i < task_thread_assignments[task]; ++i){
-          // get an available cpu
-          int cpu = claimCpu();
-          // add it to the task
-          task->addCpu(cpu);
-          taskCpuAssignments[task].insert(cpu);
-        }
-        if(increment_tick){
-          ++tick_number;
-          increment_tick = false;
-        }
-        log("start_task", "",
-                   "name", Names[task->typeID()],
-                   "tick", tick_number,
-                   "start_time", getTime(),
-                   "nthreads", task_thread_assignments[task]);
-        pthread_t thread;
-        pthread_create(&thread, NULL, run_task, (void*)task);
-        runningTasks.push_back(thread);
-      }
-    }
-  } while (!runningTasks.empty() || !pendingTasks.empty());
-
-  double end_time = getTime();
-  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
-
-  // finalize power measurement on this rank
-  struct sigaction sa2;
-  sa2.sa_handler = SIG_IGN;
-  sigaction(SIGALRM, &sa2, nullptr);
-  work_time.it_value.tv_sec = 0;
-  work_time.it_value.tv_usec = 0;
-  setitimer(ITIMER_REAL, &work_time, NULL);
-
-  log("average_power_W", avg_power_W);
-  log("max_power_W", max_power_ / 1000000.0);
-  log("time_s", end_time - start_time);
-  log("message", "ALL DONE");
 }
 

@@ -12,22 +12,20 @@ int main(int argc, char** argv)
     switch(opt) {
       case 's':{
         std::string argstring{optarg};
-        if(argstring == "baseline"){
-          scheduler.reset(new BaselineScheduler);
-        } else if(argstring == "sequential"){
-          scheduler.reset(new SequentialScheduler);
-        } else if(argstring == "advanced"){
-          scheduler.reset(new AdvancedScheduler);
-        } else if(argstring == "profile"){
-          scheduler.reset(new ProfilingScheduler);
-        } else if(argstring == "simple"){
-          scheduler.reset(new SimpleScheduler);
-        } else if(argstring == "nonpareto"){
-          scheduler.reset(new NonParetoScheduler);
+        if(argstring == "sequential"){
+          scheduler.reset(new SequentialScheduler(false));
+        } else if(argstring == "profiling"){
+          scheduler.reset(new SequentialScheduler(true));
         } else if(argstring == "fair"){
           scheduler.reset(new FairScheduler);
+        } else if(argstring == "coreconstrained"){
+          scheduler.reset(new CoreConstrainedScheduler);
+        } else if(argstring == "poweraware"){
+          scheduler.reset(new PowerAwareScheduler);
+        } else if(argstring == "slackaware"){
+          scheduler.reset(new SlackAwareScheduler);
         } else {
-          std::cerr << "Invalid scheduler type. Try 'fair', 'nonpareto', 'simple', 'sequential', 'baseline', 'advanced', or 'profile'." << std::endl;
+          std::cerr << "Invalid scheduler type. Try 'sequential', 'profiling', 'fair', 'coreconstrained', 'poweraware', or 'slackaware'." << std::endl;
           return -1;
         }
       } break;
@@ -40,7 +38,7 @@ int main(int argc, char** argv)
   }
 
   if(!scheduler){
-    scheduler.reset(new SequentialScheduler);
+    scheduler.reset(new SequentialScheduler(false));
   }
 
   if (optind == argc){
