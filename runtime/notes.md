@@ -1,4 +1,25 @@
 # Todo: Newest near top
+
+What's the goal of this paper? Are we trying to show that we can schedule tasks better because we use the smart makespan-minimizing algorithm? Or are we trying to demonstrate that by using Pareto frontiers to represent the power--performance relationships of our kernels that we get better performance per watt? That sounds like a good story to me. Could the argument be made that we don't in fact use the state of the art scheduling heuristics that minimize makespan? I mean, we could go that far, but it would require figuring out the scheduling questions behind non-monotonic relationship between number of threads and performance/power as well as non-unit increases in power per point on Pareto frontier. If we can tackle that non-unit increase business, we could probably talk about thread over prescription too as a side effect.
+
+Is this all too much to handle in the next two weeks? If we punt, that would be the absolute easiest. Might as well run those experiments to see how well they do.
+
+Note: Pareto curves are not always monotonic in the number of threads. This makes thread-based constraining by walking down the curves impossible.
+
+We should probably modify the advanced scheduler not to make decisions based on local execution time minimization; as indicated in the prior work paper, a list scheduler won't minimize the per-task execution time, but rather the estimated makespan of the entire graph.
+
+Do we just perform list scheduling based on power and log the instances where we oversubscribe the cores? If that's the case, then our performance should go through the floor, but at least we'd know why. Or if that's the case, then we perform some secondary form of adjusting to fit within the number of threads available.
+
+The goal is to MINIMIZE the MAXIMUM makespan, since that's what presumably limits the performance of the entire graph.
+
+1. Come up with initial configuration (ie, best possible perf on frontier)
+2. Estimate the makespans for each task, given the current configuration
+3. Find the one with the shortest estimated makespan and walk down to next configuration
+4. 
+
+What's the difference between running the advanced scheduler with a power limit and without, but limiting the threads? I think we may have to consider using the normal baseline scheduler.
+
+
 Ok no more MPI garbage. Steps:
 1. Write simple sequential scheduler. While there are tasks, this scheduler makes a thread to run the task then sits on `pthread_join` until it's done. Then it goes to the next one.
 2. Write a more complicated scheduler, launching as many tasks as possible and checking for completion using nonblocking joins.

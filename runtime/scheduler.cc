@@ -42,7 +42,8 @@ Scheduler::Scheduler() :
   max_power_(0),
   power_limit_(1000.0),
   available_power_(power_limit_),
-  do_profiling_(false)
+  do_profiling_(false),
+  logfile_{"scheduler.log"}
 {
   if (global){
     fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
@@ -54,6 +55,7 @@ Scheduler::Scheduler() :
     std::cerr << "Error: Unable to open MIC" << std::endl;
     abort();
   }
+  logfile_ << std::fixed;
 }
 
 void 
@@ -155,24 +157,6 @@ void Scheduler::overflow(int signum, siginfo_t*, void*){
   }
 }
 
-class Logger{
-    std::ofstream logfile_;
-  public:
-    Logger(const char* fname) : logfile_{fname} {
-      logfile_ << std::fixed;
-    }
-    
-    void log(){
-      logfile_ << std::endl;
-    }
-
-    template<class T, class U, class... Ts>
-    void log(const T& t, const U& u, const Ts&... args){
-      logfile_ << t << "=" << u << ",";
-      log(args...);
-    }
-};
-
 struct ThreadStats{
   ThreadStats(Task* t, double e, int n) : task{t}, elapsed_seconds{e}, nthreads{n} {}
   Task* task;
@@ -194,8 +178,7 @@ void
 SequentialScheduler::runMaster(Task* root)
 {
   int iter_num_threads = numAvailableCores();
-  Logger logger{"scheduler.log"};
-  logger.log("message", "cataloging configuration",
+  log("message", "cataloging configuration",
              "max_threads", numAvailableCores());
 
   double start_time = getTime();
@@ -207,7 +190,7 @@ SequentialScheduler::runMaster(Task* root)
   sa.sa_sigaction = overflow;
   sa.sa_flags = SA_SIGINFO;
   if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    logger.log("error", "Unable to set up signal handler");
+    log("error", "Unable to set up signal handler");
     abort();
   }
   struct itimerval work_time;
@@ -242,7 +225,7 @@ SequentialScheduler::runMaster(Task* root)
       // add it to the task
       task->addCpu(i);
     }
-    logger.log("start_task", "",
+    log("start_task", "",
                "name", Names[task->typeID()],
                "nthreads", iter_num_threads);
     max_power_ = 0;
@@ -260,7 +243,7 @@ SequentialScheduler::runMaster(Task* root)
     double elapsed_seconds = retval->elapsed_seconds;
     int nthreads = retval->nthreads;
     double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
-    logger.log("end_task", "",
+    log("end_task", "",
                "name", Names[task->typeID()],
                "elapsed_seconds", elapsed_seconds,
                "nthreads", nthreads,
@@ -283,15 +266,14 @@ SequentialScheduler::runMaster(Task* root)
   work_time.it_value.tv_usec = 0;
   setitimer(ITIMER_REAL, &work_time, NULL);
 
-  logger.log("time_s", end_time - start_time);
-  logger.log("message", "ALL DONE");
+  log("time_s", end_time - start_time);
+  log("message", "ALL DONE");
 }
   
 void
 SimpleScheduler::runMaster(Task* root)
 {
-  Logger logger{"scheduler.log"};
-  logger.log("message", "cataloging configuration",
+  log("message", "cataloging configuration",
              "max_threads", numAvailableCores());
 
   std::list<pthread_t> runningTasks;
@@ -305,7 +287,7 @@ SimpleScheduler::runMaster(Task* root)
   sa.sa_sigaction = overflow;
   sa.sa_flags = SA_SIGINFO;
   if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    logger.log("error", "Unable to set up signal handler");
+    log("error", "Unable to set up signal handler");
     abort();
   }
   struct itimerval work_time;
@@ -331,7 +313,7 @@ SimpleScheduler::runMaster(Task* root)
         double elapsed_seconds = retval->elapsed_seconds;
         int nthreads = retval->nthreads;
         Task* task = retval->task;
-        logger.log("end_task", "",
+        log("end_task", "",
                    "name", Names[task->typeID()],
                    "elapsed_seconds", elapsed_seconds,
                    "nthreads", nthreads,
@@ -378,7 +360,7 @@ SimpleScheduler::runMaster(Task* root)
           ++tick_number;
           increment_tick = false;
         }
-        logger.log("start_task", "",
+        log("start_task", "",
                    "name", Names[task->typeID()],
                    "tick", tick_number,
                    "start_time", getTime(),
@@ -402,20 +384,19 @@ SimpleScheduler::runMaster(Task* root)
   work_time.it_value.tv_usec = 0;
   setitimer(ITIMER_REAL, &work_time, NULL);
 
-  logger.log("average_power_W", avg_power_W);
-  logger.log("max_power_W", max_power_ / 1000000.0);
-  logger.log("time_s", end_time - start_time);
-  logger.log("message", "ALL DONE");
+  log("average_power_W", avg_power_W);
+  log("max_power_W", max_power_ / 1000000.0);
+  log("time_s", end_time - start_time);
+  log("message", "ALL DONE");
 }
 
 void
-AdvancedScheduler::runMaster(Task* root)
+NonParetoScheduler::runMaster(Task* root)
 {
   /* TODO: Add logging to document when decisions are made,
    * ie, out of power, out of cores, could use more cores, etc
    */
-  Logger logger{"scheduler.log"};
-  logger.log("message", "cataloging configuration",
+  log("message", "cataloging configuration",
              "power_limit", power_limit_,
              "max_threads", numAvailableCores());
   std::cout << "Starting execution" << std::endl;
@@ -429,7 +410,7 @@ AdvancedScheduler::runMaster(Task* root)
   sa.sa_sigaction = overflow;
   sa.sa_flags = SA_SIGINFO;
   if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    logger.log("error", "Unable to set up signal handler");
+    log("error", "Unable to set up signal handler");
     abort();
   }
   struct itimerval work_time;
@@ -453,9 +434,186 @@ AdvancedScheduler::runMaster(Task* root)
         double elapsed_seconds = retval->elapsed_seconds;
         int nthreads = retval->nthreads;
         Task* task = retval->task;
-        logger.log("end_task", "",
+        auto predicted_time = Times[task->typeID()][nthreads];
+        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
+        log("end_task", "",
                    "name", Names[task->typeID()],
                    "elapsed_seconds", elapsed_seconds,
+                   "predicted_seconds", predicted_time,
+                   "time_percent_error", percent_error,
+                   "nthreads", nthreads,
+                   "end_time", getTime(),
+                   "released_listeners", task->getNumListeners());
+        task->clearListeners(pendingTasks);
+        for(const auto& cpu : taskCpuAssignments[task]){
+          returnCpu(cpu);
+        }
+        taskCpuAssignments[task].clear();
+        runningTasks.erase(thread++);
+      } else {
+        thread++;
+      }
+    }
+
+    bool increment_tick = true;
+    if(!pendingTasks.empty()){
+      // TODO: walk down Times, ensuring thread constraint
+      std::map<Task*, int> task_assignments;
+      int sum_cores = 0;
+      for(const auto& t : pendingTasks){
+        auto cores = std::get<0>(Paretos[t->typeID()][0]);
+        task_assignments[t] = cores;
+        sum_cores += cores;
+      }
+      while(sum_cores > numAvailableCores()){
+        // 1. find assignment that reduces execution time the least
+        Task* loser = nullptr;
+        double delta_t = std::numeric_limits<double>::infinity();
+        for(auto& assignment : task_assignments){
+          if(assignment.second == 0){
+            // this thread already get's no threads, so we can move on
+            continue;
+          }
+          auto task = assignment.first;
+          auto cur_makespan = task->estimateTime() -
+                              std::get<1>(Paretos[task->typeID()][0]) +
+                              Times[task->typeID()][assignment.second];
+          auto next_makespan = task->estimateTime() -
+                               std::get<1>(Paretos[task->typeID()][0]) +
+                               Times[task->typeID()][assignment.second - 1];
+          auto delta = next_makespan - cur_makespan;
+          if(delta <= delta_t){
+            loser = task;
+            delta_t = delta;
+          }
+        }
+        // 2. update the assignments
+        if(loser){
+          task_assignments[loser]--;
+          sum_cores--;
+        } else {
+          // unable to find anything that would lower execution time (ie, nothing can run)
+          log("message", "Could not find loser, breaking");
+          break;
+        }
+      }
+
+      /*
+       * For each pending task,
+       * if task_thread_assignments[task] == 0, continue
+       * else
+       * remove task from pendingTasks
+       * assign it task_thread_assignments[task] threads
+       * pop a worker
+       * run task on worker
+       * add task to runningTasks
+       */
+      auto task_it = std::begin(pendingTasks);
+      while(task_it != std::end(pendingTasks)){
+        Task* task = *task_it;
+        auto removed = task_it++;
+        auto nthreads = task_assignments[task];
+        if(nthreads == 0){
+          /*
+          log("message", "Attempting to schedule task with zero threads",
+                     "task", Names[task->typeID()],
+                     "tick", tick_number);
+                     */
+          continue;
+        }
+        pendingTasks.erase(removed);
+        // assign task_thread_assignments[task] threads
+        for(int i = 0; i < nthreads; ++i){
+          // get an available cpu
+          int cpu = claimCpu();
+          // add it to the task
+          task->addCpu(cpu);
+          taskCpuAssignments[task].insert(cpu);
+        }
+        if(increment_tick){
+          ++tick_number;
+          increment_tick = false;
+        }
+        log("start_task", "",
+                   "name", Names[task->typeID()],
+                   "tick", tick_number,
+                   "start_time", getTime(),
+                   "nthreads", nthreads);
+        pthread_t thread;
+        pthread_create(&thread, NULL, run_task, (void*)task);
+        runningTasks.push_back(thread);
+      }
+    }
+  } while (!runningTasks.empty() || !pendingTasks.empty());
+
+  double end_time = getTime();
+  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  log("average_power_W", avg_power_W);
+  log("max_power_W", max_power_ / 1000000.0);
+  log("time_s", end_time - start_time);
+  log("message", "ALL DONE");
+}
+
+void
+AdvancedScheduler::runMaster(Task* root)
+{
+  /* TODO: Add logging to document when decisions are made,
+   * ie, out of power, out of cores, could use more cores, etc
+   */
+  log("message", "cataloging configuration",
+             "power_limit", power_limit_,
+             "max_threads", numAvailableCores());
+  std::cout << "Starting execution" << std::endl;
+
+  std::list<pthread_t> runningTasks;
+  std::list<Task*> pendingTasks;
+  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
+
+  // initialize power measurement on this rank
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    log("error", "Unable to set up signal handler");
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  double start_time = getTime();
+
+  int tick_number = 0;
+
+  pendingTasks.push_back(root);
+  do{
+    for(auto thread = begin(runningTasks); thread != end(runningTasks);){
+      void* retval_v;
+      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
+        // read back the elapsed time from the runner and log to file
+        ThreadStats* retval = (ThreadStats*) retval_v;
+        double elapsed_seconds = retval->elapsed_seconds;
+        int nthreads = retval->nthreads;
+        Task* task = retval->task;
+        auto predicted_time = Times[task->typeID()][nthreads];
+        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
+        log("end_task", "",
+                   "name", Names[task->typeID()],
+                   "elapsed_seconds", elapsed_seconds,
+                   "predicted_seconds", predicted_time,
+                   "time_percent_error", percent_error,
                    "nthreads", nthreads,
                    "end_time", getTime(),
                    "released_listeners", task->getNumListeners());
@@ -514,15 +672,11 @@ AdvancedScheduler::runMaster(Task* root)
           sum_power += std::get<2>(*task_assignments[loser]);
         } else {
           // unable to find anything that would lower execution time (ie, nothing can run)
-          logger.log("message", "Could not find loser, breaking");
+          log("message", "Could not find loser, breaking");
           break;
         }
       }
 
-      logger.log("message","reducing available power by the sum of launched tasks",
-                 "avail_before", available_power_,
-                 "sum_power", sum_power,
-                 "avail_after", available_power_ - sum_power);
       available_power_ -= sum_power;
       assert(available_power_ >= 0 && "Error: trying to schedule with more power than we have available");
 
@@ -543,7 +697,7 @@ AdvancedScheduler::runMaster(Task* root)
         auto nthreads = std::get<0>(*task_assignments[task]);
         if(nthreads == 0){
           /*
-          logger.log("message", "Attempting to schedule task with zero threads",
+          log("message", "Attempting to schedule task with zero threads",
                      "task", Names[task->typeID()],
                      "tick", tick_number);
                      */
@@ -562,7 +716,7 @@ AdvancedScheduler::runMaster(Task* root)
           ++tick_number;
           increment_tick = false;
         }
-        logger.log("start_task", "",
+        log("start_task", "",
                    "name", Names[task->typeID()],
                    "tick", tick_number,
                    "start_time", getTime(),
@@ -585,10 +739,10 @@ AdvancedScheduler::runMaster(Task* root)
   work_time.it_value.tv_usec = 0;
   setitimer(ITIMER_REAL, &work_time, NULL);
 
-  logger.log("average_power_W", avg_power_W);
-  logger.log("max_power_W", max_power_ / 1000000.0);
-  logger.log("time_s", end_time - start_time);
-  logger.log("message", "ALL DONE");
+  log("average_power_W", avg_power_W);
+  log("max_power_W", max_power_ / 1000000.0);
+  log("time_s", end_time - start_time);
+  log("message", "ALL DONE");
 }
 
 void 
@@ -604,8 +758,7 @@ BaselineScheduler::runMaster(Task* root)
   /* TODO: Add logging to document when decisions are made,
    * ie, out of power, out of cores, could use more cores, etc
    */
-  Logger logger{"scheduler.log"};
-  logger.log("message", "cataloging configuration",
+  log("message", "cataloging configuration",
              "max_threads", numAvailableCores());
   std::cout << "Starting execution" << std::endl;
 
@@ -618,7 +771,7 @@ BaselineScheduler::runMaster(Task* root)
   sa.sa_sigaction = overflow;
   sa.sa_flags = SA_SIGINFO;
   if(sigaction(SIGALRM, &sa, nullptr) != 0){
-    logger.log("error", "Unable to set up signal handler");
+    log("error", "Unable to set up signal handler");
     abort();
   }
   struct itimerval work_time;
@@ -642,9 +795,13 @@ BaselineScheduler::runMaster(Task* root)
         double elapsed_seconds = retval->elapsed_seconds;
         int nthreads = retval->nthreads;
         Task* task = retval->task;
-        logger.log("end_task", "",
+        auto predicted_time = Times[task->typeID()][nthreads];
+        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
+        log("end_task", "",
                    "name", Names[task->typeID()],
                    "elapsed_seconds", elapsed_seconds,
+                   "predicted_seconds", predicted_time,
+                   "time_percent_error", percent_error,
                    "nthreads", nthreads,
                    "end_time", getTime(),
                    "released_listeners", task->getNumListeners());
@@ -670,7 +827,7 @@ BaselineScheduler::runMaster(Task* root)
         sum_s += minthreads;
       }
       if(sum_s > numAvailableCores()){
-        logger.log("message", "Scaling desired threads to those available");
+        log("message", "Scaling desired threads to those available");
         int new_sum_s = 0;
         for(auto& s : task_thread_assignments){
           s.second = std::floor((double)numAvailableCores() / sum_s * s.second);
@@ -678,7 +835,7 @@ BaselineScheduler::runMaster(Task* root)
         }
         sum_s = new_sum_s;
       }else{
-        logger.log("message", "Enough threads to go around");
+        log("message", "Enough threads to go around");
       }
 
       // Shuffle threads around until we minimize makespan
@@ -764,7 +921,7 @@ BaselineScheduler::runMaster(Task* root)
         Task* task = *task_it;
         auto removed = task_it++;
         if(task_thread_assignments[task] == 0){
-          logger.log("message", "Attempting to schedule task with zero threads",
+          log("message", "Attempting to schedule task with zero threads",
                      "task", Names[task->typeID()],
                      "tick", tick_number);
           continue;
@@ -782,7 +939,7 @@ BaselineScheduler::runMaster(Task* root)
           ++tick_number;
           increment_tick = false;
         }
-        logger.log("start_task", "",
+        log("start_task", "",
                    "name", Names[task->typeID()],
                    "tick", tick_number,
                    "start_time", getTime(),
@@ -805,9 +962,9 @@ BaselineScheduler::runMaster(Task* root)
   work_time.it_value.tv_usec = 0;
   setitimer(ITIMER_REAL, &work_time, NULL);
 
-  logger.log("average_power_W", avg_power_W);
-  logger.log("max_power_W", max_power_ / 1000000.0);
-  logger.log("time_s", end_time - start_time);
-  logger.log("message", "ALL DONE");
+  log("average_power_W", avg_power_W);
+  log("max_power_W", max_power_ / 1000000.0);
+  log("time_s", end_time - start_time);
+  log("message", "ALL DONE");
 }
 

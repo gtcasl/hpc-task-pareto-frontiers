@@ -22,8 +22,10 @@ int main(int argc, char** argv)
           scheduler.reset(new ProfilingScheduler);
         } else if(argstring == "simple"){
           scheduler.reset(new SimpleScheduler);
+        } else if(argstring == "nonpareto"){
+          scheduler.reset(new NonParetoScheduler);
         } else {
-          std::cerr << "Invalid scheduler type. Try 'simple', 'sequential', 'baseline', 'advanced', or 'profile'." << std::endl;
+          std::cerr << "Invalid scheduler type. Try 'nonpareto', 'simple', 'sequential', 'baseline', 'advanced', or 'profile'." << std::endl;
           return -1;
         }
       } break;

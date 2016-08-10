@@ -6,8 +6,8 @@
 using namespace std;
 
 void Matrix::randomFill(){
-  random_device rd;
-  mt19937 gen(rd());
+  //random_device rd;
+  mt19937 gen(13);
   uniform_real_distribution<> dis(0,1);
   int nrows = blockSize_ * blockGridSize_;
 #pragma omp parallel for
@@ -19,8 +19,8 @@ void Matrix::randomFill(){
 }
 
 void Matrix::symmetricFill(){
-  random_device rd;
-  mt19937 gen(rd());
+  //random_device rd;
+  mt19937 gen(17);
   uniform_real_distribution<> dis(0,1);
   int nrows = blockSize_ * blockGridSize_;
 #pragma omp parallel for

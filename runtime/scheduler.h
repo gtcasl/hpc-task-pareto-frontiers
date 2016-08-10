@@ -64,6 +64,16 @@ class Scheduler
   double available_power_; // amount of power that can be used at the moment
   bool do_profiling_;
 
+  std::ofstream logfile_;
+  void log(){
+    logfile_ << std::endl;
+  }
+
+  template<class T, class U, class... Ts>
+  void log(const T& t, const U& u, const Ts&... args){
+    logfile_ << t << "=" << u << ",";
+    log(args...);
+  }
 };
 
 class SequentialScheduler : public Scheduler
@@ -79,6 +89,12 @@ class SimpleScheduler : public Scheduler
 };
 
 class AdvancedScheduler : public Scheduler
+{
+  protected:
+    void runMaster(Task* root);
+};
+
+class NonParetoScheduler : public Scheduler
 {
   protected:
     void runMaster(Task* root);
