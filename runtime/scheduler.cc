@@ -40,11 +40,12 @@ Scheduler::Scheduler() :
   cumulative_power_(0),
   num_power_samples_(0),
   max_power_(0),
-  power_limit_(1000.0),
-  available_power_(power_limit_),
+  power_limit_(std::numeric_limits<double>::infinity()),
+  current_power_(0.0),
   do_profiling_(false),
   logfile_{"scheduler.log"},
-  tick_number_(0)
+  tick_number_(0),
+  estimated_max_power_(0.0)
 {
   if (global){
     fprintf(stderr, "only allowed one instance of a scheduler at a time\n");
@@ -70,7 +71,6 @@ Scheduler::init(int argc, char** argv)
   auto power_limit_env = getenv("POWERLIMIT");
   if(power_limit_env != NULL){
     power_limit_ = std::atol(power_limit_env);
-    available_power_ = power_limit_;
   }
   available_cores_ = CPUList(num_threads);
   putenv("MKL_DYNAMIC=FALSE");
@@ -112,7 +112,7 @@ Scheduler::launchTask(Task* task, int nthreads)
     task->addCpu(cpu);
     taskCpuAssignments_[task].insert(cpu);
   }
-  available_power_ -= Powers[task->typeID()][nthreads];
+  current_power_ += Powers[task->typeID()][nthreads];
   log("start_task", "",
       "name", Names[task->typeID()],
       "tick", tick_number_,
@@ -181,7 +181,7 @@ Scheduler::run(Task* root)
         for(const auto& cpu : taskCpuAssignments_[task]){
           returnCpu(cpu);
         }
-        available_power_ += Powers[task->typeID()][nthreads];
+        current_power_ -= Powers[task->typeID()][nthreads];
         taskCpuAssignments_[task].clear();
         runningTasks_.erase(thread++);
       } else {
@@ -193,6 +193,12 @@ Scheduler::run(Task* root)
       tick_number_++;
       task_completed = false;
       tick();
+      if(current_power_ > estimated_max_power_){
+        estimated_max_power_ = current_power_;
+      }
+      log("message", "tick stats",
+          "tick", tick_number_,
+          "estimated_current_power", current_power_);
     }
   } while (!runningTasks_.empty() || !pendingTasks_.empty());
 
@@ -391,7 +397,7 @@ PowerAwareScheduler::tick()
     sum_power += std::get<2>(*task_assignments[t]);
   }
   while(sum_cores > numAvailableCores() ||
-        sum_power > available_power_){
+        sum_power + current_power_ > power_limit_){
     // 1. find assignment that minimizes the maximum execution time 
     Task* loser = nullptr;
     double max_t = std::numeric_limits<double>::infinity();

@@ -61,13 +61,14 @@ class Scheduler
   long num_power_samples_;
   uint32_t max_power_;
   double power_limit_; // I think the default of 350 is way above the TDP
-  double available_power_; // amount of power that can be used at the moment
+  double current_power_; // estimated total of current power usage
   bool do_profiling_;
   std::ofstream logfile_;
   std::list<pthread_t> runningTasks_;
   std::list<Task*> pendingTasks_;
   std::map<Task*, std::unordered_set<int> > taskCpuAssignments_;
   int tick_number_;
+  double estimated_max_power_;
 
   void launchTask(Task* task, int nthreads);
 
