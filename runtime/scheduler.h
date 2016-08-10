@@ -76,6 +76,12 @@ class Scheduler
   }
 };
 
+class FairScheduler : public Scheduler
+{
+  protected:
+    void runMaster(Task* root);
+};
+
 class SequentialScheduler : public Scheduler
 {
   protected:

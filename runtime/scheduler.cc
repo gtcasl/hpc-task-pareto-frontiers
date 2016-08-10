@@ -753,6 +753,135 @@ ProfilingScheduler::runMaster(Task* root)
 }
 
 void
+FairScheduler::runMaster(Task* root)
+{
+  log("message", "cataloging configuration",
+             "max_threads", numAvailableCores());
+
+  std::list<pthread_t> runningTasks;
+  std::list<Task*> pendingTasks;
+  std::map<Task*, std::unordered_set<int> > taskCpuAssignments;
+
+  // initialize power measurement on this rank
+  struct sigaction sa;
+  sa.sa_sigaction = overflow;
+  sa.sa_flags = SA_SIGINFO;
+  if(sigaction(SIGALRM, &sa, nullptr) != 0){
+    log("error", "Unable to set up signal handler");
+    abort();
+  }
+  struct itimerval work_time;
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 50000; // sleep for 50 ms
+  work_time.it_interval.tv_sec = 0;
+  work_time.it_interval.tv_usec = 50000; // sleep for 50 ms
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  double start_time = getTime();
+
+  int tick_number = 0;
+
+  pendingTasks.push_back(root);
+  do{
+    for(auto thread = begin(runningTasks);
+        thread != end(runningTasks);){
+      void* retval_v;
+      if(pthread_tryjoin_np(*thread, &retval_v) == 0){
+        // read back the elapsed time from the runner and log to file
+        ThreadStats* retval = (ThreadStats*) retval_v;
+        double elapsed_seconds = retval->elapsed_seconds;
+        int nthreads = retval->nthreads;
+        Task* task = retval->task;
+        auto predicted_time = Times[task->typeID()][nthreads];
+        auto percent_error = fabs(predicted_time - elapsed_seconds) / elapsed_seconds * 100.0;
+        log("end_task", "",
+                   "name", Names[task->typeID()],
+                   "elapsed_seconds", elapsed_seconds,
+                   "predicted_seconds", predicted_time,
+                   "time_percent_error", percent_error,
+                   "nthreads", nthreads,
+                   "end_time", getTime(),
+                   "released_listeners", task->getNumListeners());
+        task->clearListeners(pendingTasks);
+        for(const auto& cpu : taskCpuAssignments[task]){
+          returnCpu(cpu);
+        }
+        available_power_ += Powers[task->typeID()][nthreads];
+        taskCpuAssignments[task].clear();
+        runningTasks.erase(thread++);
+      } else {
+        thread++;
+      }
+    }
+
+    bool increment_tick = true;
+    if(!pendingTasks.empty()){
+      /*
+       * For each pending task,
+       * if task_thread_assignments[task] == 0, continue
+       * else
+       * remove task from pendingTasks
+       * assign it task_thread_assignments[task] threads
+       * pop a worker
+       * run task on worker
+       * add task to runningTasks
+       */
+      int threads_per_worker = numAvailableCores() / pendingTasks.size();
+      int remainder = numAvailableCores() % pendingTasks.size();
+      for(int i = 0; numAvailableCores() != 0 && i < pendingTasks.size(); i++){
+        auto task = pendingTasks.front();
+        pendingTasks.pop_front();
+        // assign task_thread_assignments[task] threads
+        for(int i = 0; i < threads_per_worker; ++i){
+          // get an available cpu
+          int cpu = claimCpu();
+          // add it to the task
+          task->addCpu(cpu);
+          taskCpuAssignments[task].insert(cpu);
+        }
+        // get rid of one of the remainders
+        if(remainder != 0){
+          // get an available cpu
+          int cpu = claimCpu();
+          // add it to the task
+          task->addCpu(cpu);
+          taskCpuAssignments[task].insert(cpu);
+          remainder--;
+        }
+        if(increment_tick){
+          ++tick_number;
+          increment_tick = false;
+        }
+        log("start_task", "",
+                   "name", Names[task->typeID()],
+                   "tick", tick_number,
+                   "start_time", getTime(),
+                   "nthreads", threads_per_worker);
+        pthread_t thread;
+        pthread_create(&thread, NULL, run_task, (void*)task);
+        runningTasks.push_back(thread);
+      }
+    }
+  } while (!runningTasks.empty());
+
+  double end_time = getTime();
+  double avg_power_W = (double) cumulative_power_ / num_power_samples_ / 1000000.0;
+
+  // finalize power measurement on this rank
+  struct sigaction sa2;
+  sa2.sa_handler = SIG_IGN;
+  sigaction(SIGALRM, &sa2, nullptr);
+  work_time.it_value.tv_sec = 0;
+  work_time.it_value.tv_usec = 0;
+  setitimer(ITIMER_REAL, &work_time, NULL);
+
+  log("average_power_W", avg_power_W);
+  log("max_power_W", max_power_ / 1000000.0);
+  log("time_s", end_time - start_time);
+  log("message", "ALL DONE");
+}
+
+void
 BaselineScheduler::runMaster(Task* root)
 {
   /* TODO: Add logging to document when decisions are made,
