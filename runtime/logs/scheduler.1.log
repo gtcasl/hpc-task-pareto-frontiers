@@ -1,8 +1,0 @@
-message=setting number of threads,nthreads=1,
-message=Enough threads to go around,
-start_task=,name=start,tick=1,start_time=685951.392460,nthreads=1,
-end_task=,name=start,start_time=1460660288.221032,elapsed_seconds=0.005057,nthreads=1,released_listeners=2,
-message=Scaling desired threads to those available,
-average_power_W=115.000000,
-max_power_W=116.000000,
-time_s=0.143996,

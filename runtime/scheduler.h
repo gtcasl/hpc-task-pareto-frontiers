@@ -42,7 +42,7 @@ class Scheduler
 
   virtual ~Scheduler();
 
-  std::pair<uint32_t,uint32_t> readMICPoweruW() const;
+  uint32_t readMICPoweruW() const;
   static void overflow(int signum, siginfo_t*, void*);
 
  protected:

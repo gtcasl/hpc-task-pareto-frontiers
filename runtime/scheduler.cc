@@ -267,33 +267,30 @@ int Scheduler::claimCpu()
   return -1;
 }
 
-std::pair<uint32_t,uint32_t> Scheduler::readMICPoweruW() const
+uint32_t Scheduler::readMICPoweruW() const
 {
-  std::pair<uint32_t,uint32_t> res = {0,0};
+  uint32_t power = 0;
 #ifndef no_miclib
   struct mic_power_util_info* pinfo;
   if(mic_get_power_utilization_info(mic_device_, &pinfo) != E_MIC_SUCCESS){
     std::cerr << "Error: Unable to read power utilization info" << std::endl;
-    return res;
+    return power;
   }
-  if(mic_get_inst_power_readings(pinfo, &res.first) != E_MIC_SUCCESS){
-    std::cerr << "Error: Unable to read power utilization info" << std::endl;
-  }
-  if(mic_get_max_inst_power_readings(pinfo, &res.second) != E_MIC_SUCCESS){
+  if(mic_get_inst_power_readings(pinfo, &power) != E_MIC_SUCCESS){
     std::cerr << "Error: Unable to read power utilization info" << std::endl;
   }
   mic_free_power_utilization_info(pinfo);
 #endif
-  return res;
+  return power;
 }
 
 void Scheduler::overflow(int signum, siginfo_t*, void*){ 
   if(signum == SIGALRM){
     auto power_uW = global->readMICPoweruW();
-    global->cumulative_power_ += power_uW.first;
+    global->cumulative_power_ += power_uW;
     ++global->num_power_samples_;
-    if(power_uW.second > global->max_power_){
-      global->max_power_ = power_uW.second;
+    if(power_uW > global->max_power_){
+      global->max_power_ = power_uW;
     }
   }
 }
