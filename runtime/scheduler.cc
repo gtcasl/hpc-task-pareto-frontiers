@@ -213,6 +213,7 @@ Scheduler::run(Task* root)
   work_time.it_value.tv_usec = 0;
   setitimer(ITIMER_REAL, &work_time, NULL);
 
+  log("est_max_power", estimated_max_power_);
   log("average_power_W", avg_power_W);
   log("max_power_W", max_power_ / 1000000.0);
   log("time_s", end_time - start_time);
