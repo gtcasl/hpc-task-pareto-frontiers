@@ -109,13 +109,13 @@ class PowerAwareScheduler : public Scheduler
 {
   protected:
     void tick();
-    virtual void leverageSlack(std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator>&) {}
+    virtual void leverageSlack(std::map<Task*, std::vector<ParetoPoint>::iterator>&) {}
 };
 
 class SlackAwareScheduler : public PowerAwareScheduler
 {
   protected:
-    void leverageSlack(std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator>& task_assignments);
+    void leverageSlack(std::map<Task*, std::vector<ParetoPoint>::iterator>& task_assignments);
 };
 
 #endif

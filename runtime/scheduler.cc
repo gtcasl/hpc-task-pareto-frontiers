@@ -335,23 +335,23 @@ CoreConstrainedScheduler::tick()
    * ie, out of power, out of cores, could use more cores, etc
    */
 
-  std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator> task_assignments;
+  std::map<Task*, std::vector<ParetoPoint>::iterator> task_assignments;
   int sum_cores = 0;
   for(const auto& t : pendingTasks_){
     task_assignments[t] = begin(Paretos[t->typeID()]);
-    sum_cores += std::get<0>(*task_assignments[t]);
+    sum_cores += task_assignments[t]->nthreads;
   }
   while(sum_cores > numAvailableCores()){
     // 1. find assignment that minimizes the maximum execution time 
     Task* loser = nullptr;
     double max_t = std::numeric_limits<double>::infinity();
     for(auto& assignment : task_assignments){
-      if(std::get<0>(*assignment.second) == 0){
+      if(assignment.second->nthreads == 0){
         // this thread already get's no threads, so we can move on
         continue;
       }
       auto task = assignment.first;
-      auto time = std::get<1>(*(assignment.second + 1));
+      auto time = (assignment.second + 1)->time;
       /*
       auto cur_makespan = task->estimateTime() -
                           std::get<1>(Paretos[task->typeID()][0]) +
@@ -368,14 +368,14 @@ CoreConstrainedScheduler::tick()
     // 2. update the assignments
     assert(loser && "Error: could not find losing task, but something should always be able to slow down");
 
-    sum_cores -= std::get<0>(*task_assignments[loser]);
+    sum_cores -= task_assignments[loser]->nthreads;
     task_assignments[loser]++;
-    sum_cores += std::get<0>(*task_assignments[loser]);
+    sum_cores += task_assignments[loser]->nthreads;
   }
 
   for(auto& assignment : task_assignments){
     auto task = assignment.first;
-    auto nthreads = std::get<0>(*assignment.second);
+    auto nthreads = assignment.second->nthreads;
     launchTask(task, nthreads);
   }
 }
@@ -388,13 +388,13 @@ PowerAwareScheduler::tick()
    */
 
   // walk down pareto frontiers, ensuring both constraints
-  std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator> task_assignments;
+  std::map<Task*, std::vector<ParetoPoint>::iterator> task_assignments;
   int sum_cores = 0;
   double sum_power = 0.0;
   for(const auto& t : pendingTasks_){
     task_assignments[t] = begin(Paretos[t->typeID()]);
-    sum_cores += std::get<0>(*task_assignments[t]);
-    sum_power += std::get<2>(*task_assignments[t]);
+    sum_cores += task_assignments[t]->nthreads;
+    sum_power += task_assignments[t]->power;
   }
   while(sum_cores > numAvailableCores() ||
         sum_power + current_power_ > power_limit_){
@@ -402,12 +402,12 @@ PowerAwareScheduler::tick()
     Task* loser = nullptr;
     double max_t = std::numeric_limits<double>::infinity();
     for(auto& assignment : task_assignments){
-      if(std::get<0>(*assignment.second) == 0){
+      if(assignment.second->nthreads == 0){
         // this thread already get's no threads, so we can move on
         continue;
       }
       auto task = assignment.first;
-      auto time = std::get<1>(*(assignment.second + 1));
+      auto time = (assignment.second + 1)->time;
       /*
       auto cur_makespan = task->estimateTime() -
                           std::get<1>(Paretos[task->typeID()][0]) +
@@ -424,63 +424,41 @@ PowerAwareScheduler::tick()
     // 2. update the assignments
     assert(loser && "Error: could not find losing task, but something should always be able to slow down");
 
-    sum_cores -= std::get<0>(*task_assignments[loser]);
-    sum_power -= std::get<2>(*task_assignments[loser]);
+    sum_cores -= task_assignments[loser]->nthreads;
+    sum_power -= task_assignments[loser]->power;
     task_assignments[loser]++;
-    sum_cores += std::get<0>(*task_assignments[loser]);
-    sum_power += std::get<2>(*task_assignments[loser]);
+    sum_cores += task_assignments[loser]->nthreads;
+    sum_power += task_assignments[loser]->power;
   }
 
   // perform additional power savings if we remain within our power budget
   leverageSlack(task_assignments);
-  double max_t = 0.0;
-  for(auto& assignment : task_assignments){
-    if(std::get<0>(*assignment.second)){
-      continue;
-    }
-    auto time = std::get<1>(*assignment.second);
-    if(time > max_t){
-      max_t = time;
-    }
-  }
-  for(auto& assignment : task_assignments){
-    if(std::get<0>(*assignment.second)){
-      continue;
-    }
-    while(1){
-      auto new_time = std::get<1>(*(assignment.second + 1));
-      if(new_time <= max_t){
-        assignment.second++;
-      } else {
-        break;
-      }
-    }
-  }
 
   for(auto& assignment : task_assignments){
-    auto nthreads = std::get<0>(*assignment.second);
+    auto nthreads = assignment.second->nthreads;
     launchTask(assignment.first, nthreads);
   }
 }
 
-void SlackAwareScheduler::leverageSlack(std::map<Task*, std::vector<std::tuple<int,double,double>>::iterator>& task_assignments)
+void SlackAwareScheduler::leverageSlack(std::map<Task*,
+                                        std::vector<ParetoPoint>::iterator>& task_assignments)
 {
   double max_t = 0.0;
   for(auto& assignment : task_assignments){
-    if(std::get<0>(*assignment.second)){
+    if(assignment.second->nthreads == 0){
       continue;
     }
-    auto time = std::get<1>(*assignment.second);
+    auto time = assignment.second->time;
     if(time > max_t){
       max_t = time;
     }
   }
   for(auto& assignment : task_assignments){
-    if(std::get<0>(*assignment.second)){
+    if(assignment.second->nthreads == 0){
       continue;
     }
     while(1){
-      auto new_time = std::get<1>(*(assignment.second + 1));
+      auto new_time = (assignment.second + 1)->time;
       if(new_time <= max_t){
         assignment.second++;
       } else {

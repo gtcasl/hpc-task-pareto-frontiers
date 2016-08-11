@@ -157,10 +157,17 @@ class Task {
   bool isMutating;
 };
 
+struct ParetoPoint{
+  int nthreads;
+  double time;
+  double power;
+  ParetoPoint(int n, double t, double p) : nthreads{n}, time{t}, power{p} {}
+};
+
 extern std::map<int, const char*> Names;
 extern std::map<int, std::vector<double> > Times;
 extern std::map<int, std::vector<double> > Powers;
-extern std::map<int, std::vector<std::tuple<int,double,double>>> Paretos;
+extern std::map<int, std::vector<ParetoPoint>> Paretos;
 
 int get_next_least_powerful_num_threads(int id, int cur_num_threads);
 
@@ -203,7 +210,7 @@ class Task_tmpl : public Task
 };
 }
 
-std::vector<std::tuple<int,double, double>>
+std::vector<ParetoPoint>
 make_pareto(const std::vector<double>& time,
             const std::vector<double>& power);
 
