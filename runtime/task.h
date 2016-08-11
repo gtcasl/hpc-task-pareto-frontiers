@@ -104,7 +104,7 @@ class Task {
 
   int getNumThreads() const;
 
-  double estimateTime() const;
+  double estimateMakespan(int nthreads) const;
 
   int getNumListeners() const { return listeners_.size(); }
 

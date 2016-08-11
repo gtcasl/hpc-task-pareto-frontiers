@@ -83,21 +83,19 @@ Task::getNumThreads() const
   return CPU_COUNT(&cpumask_);
 }
 
-double Task::estimateTime() const
-{
-  double my_time = Paretos[typeID_][0].time;
-  double children_time = 0.0;
+double Task::estimateMakespan(int nthreads) const {
+  double my_time = Times[typeID_][nthreads];
+  double longest_makespan_time = 0.0;
   if(!listeners_.empty()){
-    double min_time = std::numeric_limits<double>::infinity();
     for(const auto& listener : listeners_){
-      double listener_time = listener->estimateTime();
-      if(listener_time < min_time){
-        min_time = listener_time;
+      // assume the listener processes as fast as possible
+      double listener_time = listener->estimateMakespan(Paretos[listener->typeID()].front().nthreads);
+      if(listener_time > longest_makespan_time){
+        longest_makespan_time = listener_time;
       }
     }
-    children_time = min_time;
   }
-  return my_time + children_time;
+  return my_time + longest_makespan_time;
 }
 
 void Task::runProfiling()

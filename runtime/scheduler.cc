@@ -267,30 +267,33 @@ int Scheduler::claimCpu()
   return -1;
 }
 
-uint32_t Scheduler::readMICPoweruW() const
+std::pair<uint32_t,uint32_t> Scheduler::readMICPoweruW() const
 {
-  uint32_t power = 0;
+  std::pair<uint32_t,uint32_t> res = {0,0};
 #ifndef no_miclib
   struct mic_power_util_info* pinfo;
   if(mic_get_power_utilization_info(mic_device_, &pinfo) != E_MIC_SUCCESS){
     std::cerr << "Error: Unable to read power utilization info" << std::endl;
-    return power;
+    return res;
   }
-  if(mic_get_inst_power_readings(pinfo, &power) != E_MIC_SUCCESS){
+  if(mic_get_inst_power_readings(pinfo, &res.first) != E_MIC_SUCCESS){
+    std::cerr << "Error: Unable to read power utilization info" << std::endl;
+  }
+  if(mic_get_max_inst_power_readings(pinfo, &res.second) != E_MIC_SUCCESS){
     std::cerr << "Error: Unable to read power utilization info" << std::endl;
   }
   mic_free_power_utilization_info(pinfo);
 #endif
-  return power;
+  return res;
 }
 
 void Scheduler::overflow(int signum, siginfo_t*, void*){ 
   if(signum == SIGALRM){
     auto power_uW = global->readMICPoweruW();
-    global->cumulative_power_ += power_uW;
+    global->cumulative_power_ += power_uW.first;
     ++global->num_power_samples_;
-    if(power_uW > global->max_power_){
-      global->max_power_ = power_uW;
+    if(power_uW.second > global->max_power_){
+      global->max_power_ = power_uW.second;
     }
   }
 }
@@ -351,18 +354,10 @@ CoreConstrainedScheduler::tick()
         continue;
       }
       auto task = assignment.first;
-      auto time = (assignment.second + 1)->time;
-      /*
-      auto cur_makespan = task->estimateTime() -
-                          std::get<1>(Paretos[task->typeID()][0]) +
-                          std::get<1>(*assignment.second);
-      auto next_makespan = task->estimateTime() -
-                           std::get<1>(Paretos[task->typeID()][0]) +
-                           std::get<1>(*(assignment.second + 1));
-      */
-      if(time <= max_t){
+      auto next_makespan = task->estimateMakespan((assignment.second + 1)->nthreads);
+      if(next_makespan <= max_t){
         loser = task;
-        max_t = time;
+        max_t = next_makespan;
       }
     }
     // 2. update the assignments
@@ -407,18 +402,10 @@ PowerAwareScheduler::tick()
         continue;
       }
       auto task = assignment.first;
-      auto time = (assignment.second + 1)->time;
-      /*
-      auto cur_makespan = task->estimateTime() -
-                          std::get<1>(Paretos[task->typeID()][0]) +
-                          std::get<1>(*assignment.second);
-      auto next_makespan = task->estimateTime() -
-                           std::get<1>(Paretos[task->typeID()][0]) +
-                           std::get<1>(*(assignment.second + 1));
-      */
-      if(time <= max_t){
+      auto next_makespan = task->estimateMakespan((assignment.second + 1)->nthreads);
+      if(next_makespan <= max_t){
         loser = task;
-        max_t = time;
+        max_t = next_makespan;
       }
     }
     // 2. update the assignments
@@ -448,7 +435,7 @@ void SlackAwareScheduler::leverageSlack(std::map<Task*,
     if(assignment.second->nthreads == 0){
       continue;
     }
-    auto time = assignment.second->time;
+    auto time = assignment.first->estimateMakespan(assignment.second->nthreads);
     if(time > max_t){
       max_t = time;
     }
@@ -458,8 +445,12 @@ void SlackAwareScheduler::leverageSlack(std::map<Task*,
       continue;
     }
     while(1){
-      auto new_time = (assignment.second + 1)->time;
+      auto new_time = assignment.first->estimateMakespan((assignment.second + 1)->nthreads);
       if(new_time <= max_t){
+        log("leveraging_slack","",
+            "task", Names[assignment.first->typeID()],
+            "time_limit", max_t,
+            "new_time", new_time);
         assignment.second++;
       } else {
         break;
