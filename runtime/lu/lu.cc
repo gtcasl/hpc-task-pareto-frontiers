@@ -78,10 +78,16 @@ getrf(int k, int size, int lda, int* ipiv, double* A)
   info = LAPACKE_dgetrf(LAPACK_COL_MAJOR, size, size, A, lda, ipiv);
 }
 
+/*
+ * TODO: this is dumb. if this fails, it probably fails faster than a normal 
+ * execution time, without touching everything it needs. It doesn't make much
+ * practical sense, other than some handwaving to make it like we do the correct
+ * number of flops.
   if (info != 0){
     fprintf(stderr, "FAILURE on DGETRF: %d\n", info);
     abort();
   }
+  */
 
 }
 

@@ -1,11 +1,4 @@
-#include <cg/types.h>
 #include <iostream>
-
-typedef Buffer<double> DoublePtr;
-typedef Buffer<double> DoubleArray;
-typedef Buffer<int> IntArray;
-typedef Buffer<IntArray> IntChunkArray;
-typedef Buffer<DoubleArray> DoubleChunkArray;
 
 inline int
 index(int ix, int iy, int iz, int, int ny, int nz){
@@ -26,17 +19,17 @@ void
 generate_problem_27pt(
   int nx, int ny, int nz,
   int chunkSize,
-  DoubleArray A,
-  IntArray nonzeros,
-  IntArray nnzPerRow,
-  DoubleChunkArray AChunks,
-  IntChunkArray    nonzerosChunks
+  double* A,
+  int* nonzeros,
+  int* nnzPerRow,
+  double** AChunks,
+  int** nonzerosChunks
 )
 {
 
   int offset = 0;
   int nextChunk = 0;
-#pragma omp parallel for
+//#pragma omp parallel for
   for (int rx=0; rx < nx; rx++){
     int cxStart = max(rx-1,0);
     int cxStop = min(rx+1,nx-1);
@@ -49,8 +42,8 @@ generate_problem_27pt(
         int row = index(rx,ry,rz,nx,ny,nz);
         int nnzInRow = 0;
         if (row % chunkSize == 0){
-          AChunks[nextChunk] = A.offset(offset);
-          nonzerosChunks[nextChunk] = nonzeros.offset(offset);
+          AChunks[nextChunk] = A + offset;
+          nonzerosChunks[nextChunk] = nonzeros + offset;
           ++nextChunk;
         }
         for (int cx=cxStart; cx <= cxStop; ++cx){

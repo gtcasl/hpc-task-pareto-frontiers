@@ -12,7 +12,7 @@ do
     export NUMTHREADS=$x
     for i in 1 2 3 4 5
     do
-        if timeout 300s ./run -s profiling luprofiling 6 1400
+        if timeout 300s ./run -s profiling cgprofiling 170 170 170 8
         then
             break
         fi

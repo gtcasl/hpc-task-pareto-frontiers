@@ -89,10 +89,12 @@ getrfprofile(int k, int size, int lda, int* ipiv, double* A)
   mkl_free(Acopy);
 }
 
+/*
   if (info != 0){
     fprintf(stderr, "FAILURE on DGETRF: %d\n", info);
     abort();
   }
+  */
 
 }
 
