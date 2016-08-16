@@ -19,3 +19,8 @@ do
     done
     mv scheduler.log balanced.$x.log
 done
+mv balanced.*.log xpy
+cd xpy
+./avg.py balanced.*.log
+./to-csv.sh
+cp axpy.csv xapy.csv ..

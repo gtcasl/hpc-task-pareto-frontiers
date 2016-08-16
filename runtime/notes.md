@@ -1,7 +1,5 @@
 # Todo: Newest near top
-1. Aggregate cholesky results into a figure showing the effect of power limiting. x-axis is power limit, y-axis is time, four curves. We might want to do this twice: once for the modeled power, one for the measured.
-2. Run experiments for LU and CG
-3. Write.
+1. Write.
 
 What's the goal of this paper? Are we trying to show that we can schedule tasks better because we use the smart makespan-minimizing algorithm? Or are we trying to demonstrate that by using Pareto frontiers to represent the power--performance relationships of our kernels that we get better performance per watt? That sounds like a good story to me. Could the argument be made that we don't in fact use the state of the art scheduling heuristics that minimize makespan? I mean, we could go that far, but it would require figuring out the scheduling questions behind non-monotonic relationship between number of threads and performance/power as well as non-unit increases in power per point on Pareto frontier. If we can tackle that non-unit increase business, we could probably talk about thread over prescription too as a side effect.
 
