@@ -40,9 +40,10 @@ if __name__ == "__main__":
         nthreads_col = first_line.index("nthreads")
         for row in csvreader:
             time.append(float(row[time_col]))
-            power.append(float(row[pow_col]))
+            power.append(float(row[pow_col]) - 106.9)
             nthreads.append(float(row[nthreads_col]))
-    frontier = pareto_frontier(power, time, nthreads, maxX=False, maxY=False)
-    print "power,time,nthreads"
+    speedups = [time[0] / t for t in time]
+    frontier = pareto_frontier(power, speedups, nthreads, maxX=False, maxY=True)
+    print "power,speedup,nthreads"
     for x in frontier:
         print ",".join([str(i) for i in x])
