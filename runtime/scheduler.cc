@@ -324,6 +324,11 @@ FairScheduler::tick()
     }
     if(nthreads != 0){
       auto task = pendingTasks_.front();
+      if(Times[task->typeID()][nthreads] == 0){
+        // this type of task doesn't benefit from running with more than one
+        // thread, so only launch one
+        nthreads = 1;
+      }
       launchTask(task, nthreads);
     }
   }
