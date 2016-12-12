@@ -244,10 +244,23 @@ make_task(Fxn f, const char* name, int id, const std::tuple<Args...>& t, bool is
         assert(powers[nthreads] >= 0.0 && "Error: power is lower than the idle power");
         std::getline(stst, elem, ','); // speedup
       }
+      Paretos[id] = make_pareto(times, powers);
+    } else {
+      // make it so only a single thread is assigned whenever a csv doesn't exist
+      std::fill(std::begin(times)+1, std::end(times), 0);;
+      std::fill(std::begin(powers)+1, std::end(powers), 0);;
+      Paretos[id].emplace_back(1,0,0);
+      //times[1] = 0;
+      //powers[1] = 0;
     }
     Times[id] = times;
     Powers[id] = powers;
-    Paretos[id] = make_pareto(times, powers);
+    /*
+    std::cout << "Pareto for " << name << "\n";
+    for(const auto& e : Paretos[id]){
+      std::cout << e.nthreads << "\t" << e.time << "\t" << e.power << "\n";
+    }
+    */
   }
   return new impl::Task_tmpl<Fxn,Args...>(f,t,id,isMut);
 }
