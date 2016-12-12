@@ -1,35 +1,26 @@
-TARGET := spmv
-SRC := main.cc setup.cc mult.cc
+TARGET := run
+#SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc cholesky/choleskyprofile.cc
+SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc cholesky/choleskyprofile.cc lu/lu.cc lu/luprofile.cc
+HEADERS := $(shell ls *.h) cholesky/cholesky.h lu/lu.h
 
-BLAS := blas
-
-# the sstmacro-config script must be found in PATH
-CXX :=   icpc
-CC :=    icc
-CXXFLAGS := -O3 -fopenmp -mmic
-CPPFLAGS := -I. -I/home/eric/.local/stow/lwperf-mic/include -DLWPERF_USE_CSV -mkl -Wall -Wextra -std=c++11
-LIBDIR :=   
-PREFIX :=   
-LDFLAGS := -L/home/eric/.local/stow/lwperf-mic/lib
-LIBS := -llwperf
+CXX :=    icpc
+CXXFLAGS := -fPIC -O2 -g -mkl -w3 -diag-disable remark -Wunused-variable
+CPPFLAGS := -I. -std=gnu++11 -qoffload -pthread -qopenmp
+LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
+LIBS := -lmkl_rt -lmicmgmt -lrt
 
 OBJ := $(SRC:.cc=.o) 
 
 .PHONY: clean install 
 
-all: $(TARGET) $(BLAS)
-
-$(BLAS): blas.cc
-	$(CXX) -o $@ $+ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(LIBS)
+all: $(TARGET)
 
 $(TARGET): $(OBJ) 
-	$(CXX) -o $@ $+ $(LDFLAGS) $(CXXFLAGS) $(LIBS) 
+	$(CXX) -o $@ $+ $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) $(LIBS)
 
-%.o: %.cc index.h
+%.o: %.cc  $(HEADERS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
-
 clean: 
-	rm -f $(TARGET) $(OBJ) 
-
+	rm -f $(TARGET) $(OBJ)
 

@@ -1,30 +1,66 @@
-TARGET := spmv
-SRC := main.cc setup.cc mult.cc
+TARGET := run
+SRC := $(shell ls *.cc) $(shell ls cg/*.cc) cholesky/cholesky.cc
+HEADERS := $(shell ls *.h)
 
-# the sstmacro-config script must be found in PATH
-CXX :=   g++
-CC :=    gcc
-CXXFLAGS := -O3 -fopenmp
-CPPFLAGS := -I. -I/home/eric/.local/stow/lwperf-host/include -DLWPERF_USE_CSV
+target := gcc
+#target := darwin
+#target := mic
+target := intel
+
+MPI := $(HOME)/Programs/install/mpich2/bin/
+MPI :=
+
+CXX :=    $(MPI)mpicxx
+CC :=     $(MPI)mpicc
+CXXFLAGS := -fPIC -O0 -g -Wall -Wextra
+CPPFLAGS := -I. -std=c++11 -mkl
 LIBDIR :=   
 PREFIX :=   
-LDFLAGS := -L/home/eric/.local/stow/lwperf-host/lib
-LIBS=-llwperf
+LDFLAGS :=  -Wl,-rpath,$(PREFIX)/lib
+
+ifeq ($(target),gcc)
+CXXFLAGS := $(CXXFLAGS) -fopenmp
+endif
+
+ifeq ($(target),darwin)
+LDFLAGS := $(LDFLAGS) -stdlib=libc++
+CPPFLAGS := $(CPPFLAGS) -Dno_affinity -Dno_timespec -Dno_mkl -Dno_miclib
+endif
+
+ifeq ($(target),intel)
+CXX := $(CXX) -cxx=icpc
+CC := $(CC) -cc=icc
+CXXFLAGS := $(CXXFLAGS) -openmp
+LDFLAGS := $(LDFLAGS) -lmkl_rt
+endif
+
+ifeq ($(target),mic)
+CXXFLAGS := $(CXXFLAGS) -mmic -openmp
+CXX := $(CXX) -cxx=icpc
+CC := $(CC) -cc=icc
+LDFLAGS := $(LDFLAGS) -L$(MKLROOT)/lib/mic -lmkl_intel_ilp64 -lmkl_intel_thread -lmkl_core
+endif
 
 OBJ := $(SRC:.cc=.o) 
+OBJ := $(OBJ:.cpp=.o)
+OBJ := $(OBJ:.c=.o)
 
 .PHONY: clean install 
 
 all: $(TARGET)
 
 $(TARGET): $(OBJ) 
-	$(CXX) -o $@ $+ $(LDFLAGS) $(CXXFLAGS) $(LIBS) 
+	$(CXX) -o $@ $+ $(CXXFLAGS) $(LDFLAGS) $(LIBS) 
 
-%.o: %.cc index.h
+%.o: %.cc  $(HEADERS)
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
+%.o: %.c
+	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 clean: 
 	rm -f $(TARGET) $(OBJ) 
 
+install: $(TARGET)
+	cp $< $(PREFIX)/bin
 

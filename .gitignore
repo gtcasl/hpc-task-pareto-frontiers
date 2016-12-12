@@ -1,5 +1,5 @@
 tags
-doc/out
+fig/out
 src/spmv
 *.o
 src/blas
